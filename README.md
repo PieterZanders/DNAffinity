@@ -19,8 +19,6 @@ Required dependencies:
 - scikit-learn
 - PyTorch (for `DFN`)
 
-Install PyTorch from [pytorch.org](https://pytorch.org/) based on your system.
-
 ## Usage
 
 ---------------
@@ -62,7 +60,7 @@ python upbm_regressor.py --protein PROTEIN [OPTIONS]
 
 **Example:**
 ```bash
-python upbm_regressor.py Gata4 --regressor DFN --config config.json
+python upbm_regressor.py --protein Gata4 --regressor DFN --config config.json
 ```
 
 #### SELEX Regressor
@@ -100,7 +98,7 @@ python gcpbm_regressor.py --protein PROTEIN --concentration CONCENTRATION [OPTIO
 
 **Example:**
 ```bash
-python gcpbm_regressor.py cbf1 100 --regressor DFN --config config.json
+python gcpbm_regressor.py --protein cbf1 --concentration 100 --regressor DFN --config config.json
 ```
 
 ### Regressor Types
@@ -140,7 +138,7 @@ If no config file is provided, default parameters are used. The config file can 
 ### Output
 
 Trained models are saved to:
-- `trained_models/{protein}_finalized_model.sav` (for uPBM and SELEX)
+- `trained_models/{protein}_{regressor}_model.sav` (for uPBM and SELEX)
 - `output_gcpbm/{protein}/model.pck` (for gcPBM)
 
 For PyTorch models, both the model state dict (`.pth`) and full model object (`.sav`/`.pck`) are saved.
@@ -149,11 +147,11 @@ For PyTorch models, both the model state dict (`.pth`) and full model object (`.
 
 ```bash
 # uPBM with default settings
-python upbm_regressor.py Gata4
+python upbm_regressor.py --protein Gata4
 
 # SELEX with custom regressor
-python selex_regressor.py Gata4 4 --regressor random_forest
+python selex_regressor.py --protein Gata4 4 --regressor random_forest
 
 # gcPBM with custom config
-python gcpbm_regressor.py cbf1 100 --config my_config.json --regressor DFN
+python gcpbm_regressor.py --protein cbf1 --concentrayion 100 --config my_config.json --regressor DFN
 ```
