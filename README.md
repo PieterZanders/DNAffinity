@@ -45,7 +45,7 @@ All regressor scripts support command-line arguments for flexible configuration:
 #### uPBM Regressor
 
 ```bash
-python upbm_regressor.py PROTEIN [OPTIONS]
+python upbm_regressor.py --protein PROTEIN [OPTIONS]
 ```
 
 **Arguments:**
