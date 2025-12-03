@@ -305,7 +305,8 @@ class Model:
             self.regressor.train()
             num_epochs = self.pytorch_model_params.get('num_epochs', 100)
             batch_size = self.pytorch_model_params.get('batch_size', 32)
-            
+            print(f"Start training...")
+
             for epoch in range(num_epochs):
                 total_loss = 0
                 n_batches = 0
@@ -335,7 +336,7 @@ class Model:
                     total_loss += loss.item()
                     n_batches += 1
                 
-                if (epoch) % 10 == 0 or epoch == num_epochs - 1:
+                if (epoch) % 20 == 0 or epoch == num_epochs - 1:
                     print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss/n_batches:.6f}")
             
             print("Simple PyTorch regression model training completed")
@@ -353,6 +354,55 @@ class Model:
                     self.y_test = train_test_split(self.X, self.y.ravel(), train_size=self.training_set_size,
                                                    random_state=0, shuffle=False)
                 self.regressor.fit(self.X_train, self.y_train)
+            
+            # Extract feature importances for sklearn models
+            if hasattr(self.regressor, 'feature_importances_'):
+                importances = self.regressor.feature_importances_
+                std = np.std([tree.feature_importances_ for tree in self.regressor.estimators_], axis=0) if hasattr(self.regressor, 'estimators_') else None
+                indices = np.argsort(importances)[::-1]
+                
+                # Determine feature types based on feature indices
+                # This assumes the feature structure: presence_tetramer (256), avg (6 per position), diagonal_fce (6 per position), electrostatic
+                num_presence = 256  # 4^4 = 256 possible tetramers
+                num_avg_per_pos = 6
+                num_diag_per_pos = 6
+                
+                for f in range(self.X.shape[1]):
+                    if indices[f] < num_presence:
+                        feat = 'Presence'
+                    elif indices[f] < num_presence + (self.len_aln - 3) * num_avg_per_pos:
+                        pos_idx = (indices[f] - num_presence) % num_avg_per_pos
+                        if pos_idx == 0:
+                            feat = 'AVG Shift'
+                        elif pos_idx == 1:
+                            feat = 'AVG Slide'
+                        elif pos_idx == 2:
+                            feat = 'AVG Rise'
+                        elif pos_idx == 3:
+                            feat = 'AVG Tilt'
+                        elif pos_idx == 4:
+                            feat = 'AVG Roll'
+                        else:
+                            feat = 'AVG Twist'
+                    elif indices[f] < num_presence + (self.len_aln - 3) * (num_avg_per_pos + num_diag_per_pos):
+                        pos_idx = (indices[f] - num_presence - (self.len_aln - 3) * num_avg_per_pos) % num_diag_per_pos
+                        if pos_idx == 0:
+                            feat = 'Diagonal Shift'
+                        elif pos_idx == 1:
+                            feat = 'Diagonal Slide'
+                        elif pos_idx == 2:
+                            feat = 'Diagonal Rise'
+                        elif pos_idx == 3:
+                            feat = 'Diagonal Tilt'
+                        elif pos_idx == 4:
+                            feat = 'Diagonal Roll'
+                        else:
+                            feat = 'Diagonal Twist'
+                    else:
+                        feat = 'Electro'
+                    
+                    self.l.append(importances[indices[f]])
+                    self.features.append([feat, importances[indices[f]]])
 
 
     def predict(self, testing_dataset=None):

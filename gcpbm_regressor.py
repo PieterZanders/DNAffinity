@@ -179,32 +179,40 @@ plt.plot([0, 1], color='red')
 #    file.write("0vs%s\t" % cycle)
 #    file.write("%s\n" % model.r2)
 
-df = pd.DataFrame(model.features)
+# Only process feature importances if available (sklearn models)
+if model.features and len(model.features) > 0:
+    df = pd.DataFrame(model.features, columns=['Feature', 'Importance'])
+    
+    index = [k for k in range(len(df)) if df['Feature'].iloc[k] == 'Presence']
+    p = sum([df['Importance'].iloc[k] for k in index]) if index else 0
+    
+    index = [k for k in range(len(df)) if df['Feature'].iloc[k] == 'Electro']
+    e = sum([df['Importance'].iloc[k] for k in index]) if index else 0
+else:
+    # If no feature importances available (e.g., for non-tree models), skip this analysis
+    print("Feature importance analysis not available for this regressor type")
+    p, e = 0, 0
 
-index = [k for k in range(model.X.shape[1]) if df[0][k] == 'Presence']
-p = sum([df[1][k] for k in index])
-
-index = [k for k in range(model.X.shape[1]) if df[0][k] == 'Electro']
-e = sum([df[1][k] for k in index])
-
-shape = 1 - e - p
-
-y = np.array([p, e, shape])
-
-fig = plt.gcf()
-fig.set_size_inches(8, 8)
-labels = ["Presence", "Electrostatic", "Shape"]
-patches, texts = plt.pie(y, startangle=0)
-plt.legend(patches, labels, loc="best")
-# plt.pie(y)
-plt.show()
-
-plt.xlabel('Feature number')
-plt.ylabel('Relative importance (%)')
-plt.legend('Top 30 features')
-plt.bar(range(len(l[0:10])), l[0:10], color='red', align="center", )
-
-print(df[0:10])
+if model.features and len(model.features) > 0:
+    shape = 1 - e - p
+    
+    y = np.array([p, e, shape])
+    
+    fig = plt.gcf()
+    fig.set_size_inches(8, 8)
+    labels = ["Presence", "Electrostatic", "Shape"]
+    patches, texts = plt.pie(y, startangle=0)
+    plt.legend(patches, labels, loc="best")
+    # plt.pie(y)
+    plt.show()
+    
+    plt.xlabel('Feature number')
+    plt.ylabel('Relative importance (%)')
+    plt.legend('Top 30 features')
+    if model.l and len(model.l) > 0:
+        plt.bar(range(len(model.l[0:10])), model.l[0:10], color='red', align="center", )
+    
+    print(df.head(10))
 if not os.path.isdir('output_gcpbm'):
     os.mkdir('output_gcpbm')
 if not os.path.isdir(f'output_gcpbm/{protein}'):
