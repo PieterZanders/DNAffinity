@@ -78,8 +78,8 @@ class Dataset:
         if 'avg' in self.feats:
             tetra_avg = {line.split()[0] : np.array([float(x) for x in line.split()[1:]])  for line in open(f'input/avg_tetramer.dat') if 'SHIFT' not in line}
             try:
-                print(name_file)
-                sublist = [np.delete(k, int(num_shp_params_avg)) for k in tetra_avg.values()]
+                print(name_file)  # pyright: ignore[reportUndefinedVariable]
+                sublist = [np.delete(k, int(num_shp_params_avg)) for k in tetra_avg.values()]  # pyright: ignore[reportUndefinedVariable]
             except:
                 #print("Not working jeje")
                 sublist = tetra_avg.values() 
@@ -97,8 +97,8 @@ class Dataset:
         if 'diagonal_fce' in self.feats:
             tetra_fce_reduced = {tt: tetra_fce[tt][list(range(0,36,7))] for tt in tetra_fce.keys()}
             try:
-                print(name_file)
-                sublist = [np.delete(k, int(num_shp_params_diag)) for k in tetra_fce_reduced.values()]
+                print(name_file)  # pyright: ignore[reportUndefinedVariable]
+                sublist = [np.delete(k, int(num_shp_params_diag)) for k in tetra_fce_reduced.values()]  # pyright: ignore[reportUndefinedVariable]
             except:
                 #print("Not working jeje")
                 sublist = tetra_fce_reduced.values()
@@ -194,7 +194,8 @@ class Model:
     regressors = {'random_forest': RandomForestRegressor(n_estimators=10, random_state=None),
                   'linear': LinearRegression(), 'ridge': Ridge(alpha=0.0001), 'svr': SVR()}
 
-    def __init__(self, dataset, len_aln, regressor='random_forest', training_set_size=0.8, weighted=False):
+    def __init__(self, dataset, len_aln, regressor='random_forest', training_set_size=0.8, weighted=False, 
+                 pytorch_model_params=None):
         plt.clf()
         self.data = dataset
         self.X = self.data.features
@@ -209,10 +210,53 @@ class Model:
         self.training_set_size = training_set_size
         self.y_pred, self.r2, self.mse = 3 * [None]
         self.X_train, self.X_test, self.y_train, self.y_test, self.w_train, self.w_test = 6 * [None]
+        self.use_simple_regressor = regressor in ['DFN']
 
         print("features have shape: ", self.X.shape)
         print("target values have shape: ", self.y.shape)
-        self.regressor = Model.regressors[regressor]
+        
+        if self.use_simple_regressor:
+            # Simple feedforward regression model
+            try:
+                from pytorch_models import RegressionCV
+                import torch
+                import torch.nn as nn
+                import torch.optim as optim
+                
+                # Store device string instead of torch module
+                self._torch_available = True
+                self._device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
+                
+                # Default model architecture
+                if pytorch_model_params is None:
+                    pytorch_model_params = {
+                        'layers': [64, 32, 1],  # [hidden1, hidden2, output]
+                        'lr': 0.001,
+                        'normalization': True
+                    }
+                
+                self.pytorch_model_params = pytorch_model_params
+                in_features = self.X.shape[1]
+                
+                # Create model
+                layers = pytorch_model_params.get('layers', [64, 32, 1])
+                self.regressor = RegressionCV(
+                    model=layers,
+                    in_features=in_features,
+                    normalization=pytorch_model_params.get('normalization', True)
+                )
+                
+                self.optimizer = optim.Adam(self.regressor.parameters(), lr=pytorch_model_params.get('lr', 0.001))
+                self.criterion = nn.MSELoss()
+                self.device = torch.device(self._device_str)
+                self.regressor.to(self.device)
+                print(f"Using simple PyTorch regression model on device: {self.device}")
+                print(f"Model architecture: {in_features} -> {' -> '.join(map(str, layers))}")
+            except ImportError as e:
+                raise ImportError(f"PyTorch dependencies not available: {e}. Please install torch.")
+        else:
+            self.regressor = Model.regressors[regressor]
+        
         self.train()
 
     def train(self):
@@ -221,18 +265,94 @@ class Model:
         on feature importances
         :return: None
         """
-        # splits w/o randomness for training and testing
-        if self.weights is not None:
-            self.X_train, self.X_test, self.y_train, self.y_test, \
-                self.w_train, self.w_test = train_test_split(self.X, self.y.ravel(), self.weights,
-                                                             train_size=self.training_set_size,
-                                                             random_state=0, shuffle=False)
-            self.regressor.fit(self.X_train, self.y_train, self.w_train)
+        if self.use_simple_regressor:
+            # Simple feedforward regression - just use features
+            # Ensure features are numeric (float32) before feeding to PyTorch
+            X = np.asarray(self.X, dtype=np.float32)
+            y = self.y.ravel() if len(self.y.shape) > 1 else self.y
+            
+            # Split data
+            if self.weights is not None:
+                self.X_train, self.X_test, self.y_train, self.y_test, \
+                    self.w_train, self.w_test = train_test_split(X, y, self.weights,
+                                                                 train_size=self.training_set_size,
+                                                                 random_state=0, shuffle=False)
+            else:
+                self.X_train, self.X_test, self.y_train, \
+                    self.y_test = train_test_split(X, y, train_size=self.training_set_size,
+                                                   random_state=0, shuffle=False)
+                self.w_train = None
+                self.w_test = None
+            
+            # Convert to tensors (ensure numeric types)
+            import torch
+            X_train_tensor = torch.tensor(np.asarray(self.X_train, dtype=np.float32), dtype=torch.float32).to(self.device)
+            y_train_tensor = torch.tensor(np.asarray(self.y_train, dtype=np.float32), dtype=torch.float32).to(self.device)
+            X_test_tensor = torch.tensor(np.asarray(self.X_test, dtype=np.float32), dtype=torch.float32).to(self.device)
+            y_test_tensor = torch.tensor(np.asarray(self.y_test, dtype=np.float32), dtype=torch.float32).to(self.device)
+            
+            if self.w_train is not None:
+                w_train_tensor = torch.tensor(np.asarray(self.w_train, dtype=np.float32), dtype=torch.float32).to(self.device)
+            else:
+                w_train_tensor = None
+            
+            # Store for prediction
+            self.X_train_tensor = X_train_tensor
+            self.X_test_tensor = X_test_tensor
+            self.y_test_tensor = y_test_tensor
+            
+            # Training loop
+            self.regressor.train()
+            num_epochs = self.pytorch_model_params.get('num_epochs', 100)
+            batch_size = self.pytorch_model_params.get('batch_size', 32)
+            
+            for epoch in range(num_epochs):
+                total_loss = 0
+                n_batches = 0
+                
+                # Mini-batch training
+                for i in range(0, len(X_train_tensor), batch_size):
+                    batch_end = min(i + batch_size, len(X_train_tensor))
+                    X_batch = X_train_tensor[i:batch_end]
+                    y_batch = y_train_tensor[i:batch_end]
+                    
+                    self.optimizer.zero_grad()
+                    
+                    # Forward pass
+                    y_pred = self.regressor(X_batch)
+                    
+                    # Compute loss
+                    import torch
+                    if w_train_tensor is not None:
+                        w_batch = w_train_tensor[i:batch_end]
+                        loss = torch.mean(w_batch * (y_pred.squeeze() - y_batch) ** 2)
+                    else:
+                        loss = self.criterion(y_pred.squeeze(), y_batch)
+                    
+                    loss.backward()
+                    self.optimizer.step()
+                    
+                    total_loss += loss.item()
+                    n_batches += 1
+                
+                if (epoch) % 10 == 0 or epoch == num_epochs - 1:
+                    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss/n_batches:.6f}")
+            
+            print("Simple PyTorch regression model training completed")
         else:
-            self.X_train, self.X_test, self.y_train, \
-                self.y_test = train_test_split(self.X, self.y.ravel(), train_size=self.training_set_size,
-                                               random_state=0, shuffle=False)
-            self.regressor.fit(self.X_train, self.y_train)
+            # Original sklearn training
+            # splits w/o randomness for training and testing
+            if self.weights is not None:
+                self.X_train, self.X_test, self.y_train, self.y_test, \
+                    self.w_train, self.w_test = train_test_split(self.X, self.y.ravel(), self.weights,
+                                                                 train_size=self.training_set_size,
+                                                                 random_state=0, shuffle=False)
+                self.regressor.fit(self.X_train, self.y_train, self.w_train)
+            else:
+                self.X_train, self.X_test, self.y_train, \
+                    self.y_test = train_test_split(self.X, self.y.ravel(), train_size=self.training_set_size,
+                                                   random_state=0, shuffle=False)
+                self.regressor.fit(self.X_train, self.y_train)
 
 
     def predict(self, testing_dataset=None):
@@ -242,12 +362,38 @@ class Model:
         :param testing_dataset: Dataset instance, test data to supply for cross-evaluation (optional)
         :return: None
         """
-        if testing_dataset is not None:
-            self.X_test, self.y_test = testing_dataset.features, testing_dataset.scores
-        self.y_pred = self.regressor.predict(self.X_test).reshape(-1, 1)
-        self.y_test = self.y_test.reshape(-1, 1)
-        self.r2 = np.round(metrics.r2_score(self.y_test, self.y_pred), 3)
-        self.mse = np.round(metrics.mean_absolute_error(self.y_test, self.y_pred), 6)    
+        if self.use_simple_regressor:
+            # Simple feedforward regression prediction
+            if testing_dataset is not None:
+                X_test = testing_dataset.features
+                y_test = testing_dataset.scores
+                if len(y_test.shape) > 1:
+                    y_test = y_test.ravel()
+            else:
+                X_test = self.X_test
+                y_test = self.y_test
+            
+            import torch
+            X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(self.device)
+            
+            self.regressor.eval()
+            with torch.no_grad():
+                y_pred_tensor = self.regressor(X_test_tensor)
+                self.y_pred = y_pred_tensor.cpu().numpy()
+                self.y_test = y_test.reshape(-1, 1) if len(y_test.shape) == 1 else y_test
+            
+            self.y_pred = self.y_pred.reshape(-1, 1)
+            self.y_test = self.y_test.reshape(-1, 1)
+            self.r2 = np.round(metrics.r2_score(self.y_test, self.y_pred), 3)
+            self.mse = np.round(metrics.mean_absolute_error(self.y_test, self.y_pred), 6)
+        else:
+            # Original sklearn prediction
+            if testing_dataset is not None:
+                self.X_test, self.y_test = testing_dataset.features, testing_dataset.scores
+            self.y_pred = self.regressor.predict(self.X_test).reshape(-1, 1)
+            self.y_test = self.y_test.reshape(-1, 1)
+            self.r2 = np.round(metrics.r2_score(self.y_test, self.y_pred), 3)
+            self.mse = np.round(metrics.mean_absolute_error(self.y_test, self.y_pred), 6)    
 
     def plot(self):
         """
@@ -271,4 +417,36 @@ class Model:
         """
         plt.legend()
         plt.show()
+    
+    def __getstate__(self):
+        """Custom pickle state - exclude non-pickleable PyTorch objects."""
+        state = self.__dict__.copy()
+        # Remove optimizer and criterion for PyTorch models (can be recreated)
+        if hasattr(self, 'use_simple_regressor') and self.use_simple_regressor:
+            state.pop('optimizer', None)
+            state.pop('criterion', None)
+            state.pop('device', None)
+            # Store device as string instead
+            if hasattr(self, '_device_str'):
+                state['_device_str'] = self._device_str
+        return state
+    
+    def __setstate__(self, state):
+        """Restore state after unpickling - recreate PyTorch objects if needed."""
+        self.__dict__.update(state)
+        # Recreate optimizer and criterion for PyTorch models if needed
+        if hasattr(self, 'use_simple_regressor') and self.use_simple_regressor and hasattr(self, 'regressor'):
+            import torch
+            import torch.nn as nn
+            import torch.optim as optim
+            
+            if hasattr(self, 'pytorch_model_params'):
+                lr = self.pytorch_model_params.get('lr', 0.001)
+                self.optimizer = optim.Adam(self.regressor.parameters(), lr=lr)
+                self.criterion = nn.MSELoss()
+                if hasattr(self, '_device_str'):
+                    self.device = torch.device(self._device_str)
+                else:
+                    self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                self.regressor.to(self.device)
 

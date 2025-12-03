@@ -10,22 +10,52 @@ import os
 import time
 import numpy as np
 import sys
+import argparse
+import json
 import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 
-from dataset import Dataset
-from model import Model
+from regressor_classes import Dataset, Model
 
 
-if len(sys.argv) > 1:
-    protein = sys.argv[1]
-    concentration = sys.argv[2]
-    data_dir = f'proteins/{protein}'
+# -----------------------------------------------------------------------------
+# Argument parser
+# -----------------------------------------------------------------------------
+parser = argparse.ArgumentParser(description='gcPBM regressor for affinity prediction')
+parser.add_argument('--protein', type=str, help='Protein name')
+parser.add_argument('--concentration', type=str, help='Concentration label')
+parser.add_argument('--data-dir', type=str, default=None,
+                    help='Data directory (default: proteins/{protein} or test_data/gcPBM/{protein} for default case)')
+parser.add_argument('--regressor', type=str, default='DFN',
+                    choices=['random_forest', 'linear', 'ridge', 'svr',
+                             'DFN'],
+                    help='Regressor type (default: DFN)')
+parser.add_argument('--training-set-size', type=float, default=0.9,
+                    help='Training set size fraction (default: 0.9)')
+parser.add_argument('--randomize-fce', action='store_true',
+                    help='Randomize FCE features')
+parser.add_argument('--score', type=str, default='Median_intensity',
+                    help='Score column name (default: Median_intensity)')
+parser.add_argument('--model-target', type=str, default='octamers',
+                    choices=['octamers', 'tetramers'],
+                    help='Model target (default: octamers)')
+parser.add_argument('--config', type=str, default=None,
+                    help='Path to JSON file with PyTorch model parameters')
+
+args = parser.parse_args()
+
+protein = args.protein
+concentration = args.concentration
+
+if args.data_dir is not None:
+    data_dir = args.data_dir
 else:
-    protein = 'cbf1'
-    concentration = '100'
-    data_dir = f'test_data/gcPBM/{protein}'
+    # Original behaviour: proteins/{protein} unless using the built-in test case
+    if len(sys.argv) > 1:
+        data_dir = f'proteins/{protein}'
+    else:
+        data_dir = f'test_data/gcPBM/{protein}'
 
 
 #####################################
@@ -36,7 +66,7 @@ else:
 
 # yeast
 
-raw_data = pd.read_csv(f'{data_dir}/{protein}_{concentration}.txt', sep='\t')
+raw_data = pd.read_csv(f'{data_dir}/{protein}/{protein}_{concentration}.txt', sep='\t')
 proc_data = pd.concat([raw_data[["Sequence", "Intensity"]]])
 proc_data = proc_data.dropna()
 proc_data = proc_data.reset_index()
@@ -53,7 +83,7 @@ dictionary = dict(zip(values, strings))
 plt.plot(sorted(values))
 print(strings[0][12:18])
 
-freq_matrix = pd.read_csv(f'{data_dir}/cbf1_freq_matrix_6.txt', delim_whitespace=True)
+freq_matrix = pd.read_csv(f'{data_dir}/{protein}/{protein}_freq_matrix_6.txt', sep=r'\s+')
 freq_matrix = np.array(freq_matrix)
 translate = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
 reverse = {0: 'A', 1: 'C', 2: 'G', 3: 'T'}
@@ -103,18 +133,37 @@ the_features = {0: ['electrostatic'], 1: ['presence_tetramer'], 2: ['avg'], 3: [
 len_aln = len(strings[0])
 
 chosen_features = the_features[4]
-model_target = 'octamers'
-regressor = 'random_forest'
-training_set_size = 0.9
-randomize_fce = False
-score = 'Median_intensity'
+model_target = args.model_target
+regressor = args.regressor
+training_set_size = args.training_set_size
+randomize_fce = args.randomize_fce
+score = args.score
 selected_tetramers = list(np.arange(0, len_aln - 3))
+
+# PyTorch model parameters (only used if regressor is 'DFN')
+default_pytorch_params = {
+    'layers': [64, 32, 1],  # [hidden1, hidden2, ..., output]
+    'lr': 0.001,
+    'normalization': True,
+    'num_epochs': 100,
+    'batch_size': 32
+}
+
+if args.config is not None:
+    with open(args.config, 'r') as f:
+        cfg = json.load(f)
+    if 'pytorch_model_params' in cfg:
+        cfg = cfg['pytorch_model_params']
+    pytorch_model_params = {**default_pytorch_params, **cfg}
+else:
+    pytorch_model_params = default_pytorch_params
 
 ## time
 
 start_time = time.time()
 dset_train = Dataset(protein, df_train, model_target, randomize_fce, chosen_features, score, selected_tetramers)
-model = Model(dset_train, len_aln, regressor, training_set_size)
+model = Model(dset_train, len_aln, regressor, training_set_size,
+              pytorch_model_params=pytorch_model_params)
 print('the model has been trained')
 print("It took %s seconds" % (time.time() - start_time))
 
@@ -160,4 +209,13 @@ if not os.path.isdir('output_gcpbm'):
     os.mkdir('output_gcpbm')
 if not os.path.isdir(f'output_gcpbm/{protein}'):
     os.mkdir(f'output_gcpbm/{protein}')
-pickle.dump(model, open(f'output_gcpbm/{protein}/model.pck', 'wb'))
+
+# save the model to disk
+filename = f'output_gcpbm/{protein}/model.pck'
+if regressor in ['DFN']:
+    import torch
+    torch.save(model.regressor.state_dict(), filename.replace('.pck', '.pth'))
+    # Also save the full model object for compatibility
+    pickle.dump(model, open(filename, 'wb'))
+else:
+    pickle.dump(model, open(filename, 'wb'))

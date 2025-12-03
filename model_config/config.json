@@ -1,0 +1,7 @@
+{
+    "layers": [256, 128, 64, 32, 1],
+    "lr": 1e-4,
+    "normalization": true,
+    "num_epochs": 100,
+    "batch_size": 32
+  }
