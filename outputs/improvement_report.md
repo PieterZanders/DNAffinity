@@ -1,6 +1,6 @@
-# DNAffinity: fixed evaluation and deep-model improvements (INTERIM, 2026-10-20 16:55 CEST)
+# DNAffinity: fixed evaluation and deep-model improvements (FINAL, 2026-10-20 19:20 CEST)
 
-**Status:** gcPBM is complete (all 41 runs). SELEX is mostly complete: all fixed-preprocessing deep and linear runs are done, while RF variants, Transformer-orig and the legacy-preprocessing runs are still running. uPBM is queued in the same resumable suite and has not started yet. Rerun `scripts/summarize_cv.py` to refresh `fixed_results.csv` (all metric columns, including RMSE and train R2).
+**Status:** the CV suite is complete. All 123 runs (41 each for gcPBM, SELEX and uPBM) finished with exit code 0. `outputs/fixed_results.csv` holds every metric column, including RMSE and train R2; regenerate it with `.venv/bin/python scripts/summarize_cv.py` (needs `tabulate`, which is installed in `.venv`).
 
 ## Protocol
 * **Splits:** 5-fold shuffled GroupKFold (seed 0). A group is one canonical sequence, so a sequence, its reverse complement and any duplicates always share a fold.
@@ -40,18 +40,51 @@ Before = the leaky single split from `baseline_results.csv` (30 epochs). After =
 * One-hot channels were neutral: CNN1D 0.719 → 0.715 (±0.04) and CNNAttention 0.705 → 0.686. The 30-mer shape and physics features already encode the E-box core.
 * Log targets hurt R2 for linear models and SVR, because the back-transformation inflates extremes.
 
-## SELEX (partial; fixed preprocessing, count ≥ 10, 10,771 unique 10-mers)
+## SELEX (fixed preprocessing, count ≥ 10, 10,771 unique 10-mers)
 | model | base | rcavg | onehot | loghuber |
 |---|---|---|---|---|
 | CNN1D | 0.735 / 0.648 / 0.528 | 0.753 / 0.669 / 0.560 | **0.803±0.011 / 0.736±0.015 / 0.644±0.017** | 0.796 / 0.732 / 0.626 |
 | CNNAttention | 0.723 / 0.628 / 0.516 | 0.744 / 0.653 / 0.550 | 0.798 / 0.730 / 0.634 | 0.786 / 0.725 / 0.611 |
-| Transformer | 0.699 / 0.597 / 0.485 | 0.707 / 0.608 / 0.498 | 0.754 / 0.682 / 0.568 | 0.747 / 0.685 / 0.549 |
+| Transformer | 0.699 / 0.597 / 0.485 (orig: 0.707 / 0.610 / 0.493) | 0.707 / 0.608 / 0.498 | 0.754 / 0.682 / 0.568 | 0.747 / 0.685 / 0.549 |
 | DFN | 0.710 / 0.627 / 0.494 | 0.727 / 0.648 / 0.524 | 0.733 / 0.654 / 0.534 | 0.722 / 0.662 / 0.507 |
 | svr | 0.723 / 0.667 / 0.516 | 0.723 / 0.667 / 0.516 | 0.724 / 0.666 / 0.517 | 0.731 / 0.666 / 0.525 |
-| random_forest | 0.682 / 0.572 / 0.464 | (running) | (running) | (running) |
+| random_forest | 0.682 / 0.572 / 0.464 | 0.683 / 0.574 / 0.466 | 0.687 / 0.579 / 0.471 | 0.693 / 0.592 / 0.468 |
 | ridge / linear | 0.558 / 0.535 / 0.310 | same | same | 0.560 / 0.544 / 0.296 |
 
-Values are Pearson / Spearman / R2, fold std ≈ 0.01. **Current SELEX leader: CNN1D + RC averaging + one-hot** (Pearson 0.803, R2 0.644). On SELEX, one-hot channels are the main gain (+0.05 Pearson, +0.07 Spearman for the windowed models), RC averaging adds about +0.02, and log/Huber is neutral to slightly negative. The SELEX numbers are not comparable to the old baseline (R2 0.53, CNNAttention), because the old data were a different, noise-dominated k-mer set evaluated with leakage. The legacy-preprocessing runs for this comparison are still pending.
+Values are Pearson / Spearman / R2 (5-fold mean; fold std ≈ 0.01). **Best SELEX model: CNN1D + RC averaging + one-hot channels**, Pearson 0.803 ± 0.011, Spearman 0.736 ± 0.015, R2 0.644 ± 0.017. CNNAttention is within one std (0.798 / 0.730 / 0.634) and slightly slower.
 
-## uPBM
-Queued and not yet started. A rough estimate is about 1.5–2 h for the remaining SELEX and uPBM runs together at 6 parallel jobs (uPBM is the smallest dataset; RF and SVR are the slowest jobs).
+**What helped on SELEX**
+* **One-hot channels** are the main gain for the windowed models: CNN1D Spearman 0.669 → 0.736, CNNAttention 0.653 → 0.730, Transformer 0.608 → 0.682. Flat one-hot does almost nothing for DFN, SVR, RF and ridge.
+* **RC averaging** adds about +0.02 for the neural nets and nothing for the sklearn models.
+* **Log target + Huber** is neutral to slightly negative for the CNNs (CNN1D R2 0.644 → 0.626). It helps the weaker models a little on Spearman (DFN +0.008, RF +0.013).
+* **Transformer:** the original configuration is now on par with, even slightly ahead of, the new defaults at `base` (Spearman 0.610 vs 0.597). Even with one-hot it stays about 0.05 behind the CNNs and is roughly 2× slower.
+* **Legacy-preprocessing runs are not comparable.** They use the old inverted k-mer selection (12,662 sequences, a different and noise-dominated set). Their Pearson is higher (CNN1D 0.780) but Spearman collapses to about 0.50–0.58, which is consistent with a few extreme labels driving Pearson. The old leaky baseline (CNNAttention R2 0.53) is likewise a different dataset.
+
+## uPBM Gata4 (fixed preprocessing, 4,935 RC-collapsed unique 10-mers)
+| model | base | rcavg | onehot | loghuber |
+|---|---|---|---|---|
+| CNN1D | 0.621 / 0.557 / 0.371 | 0.629 / 0.564 / 0.383 | 0.637 / 0.576 / 0.397 | 0.642 / **0.589** / 0.371 |
+| CNNAttention | 0.611 / 0.550 / 0.355 | 0.621 / 0.558 / 0.371 | 0.638 / 0.580 / 0.402 | 0.638 / **0.589** / 0.381 |
+| Transformer | 0.623 / 0.563 / 0.385 (orig: 0.619 / 0.563 / 0.380) | 0.627 / 0.567 / 0.391 | **0.642±0.029 / 0.584±0.034 / 0.408±0.037** | 0.639 / 0.587 / 0.376 |
+| DFN | 0.618 / 0.558 / 0.366 | 0.626 / 0.566 / 0.380 | 0.631 / 0.572 / 0.387 | 0.633 / 0.580 / 0.368 |
+| svr | 0.630 / 0.574 / 0.385 | same | 0.632 / 0.575 / 0.386 | 0.629 / 0.575 / 0.370 |
+| random_forest | 0.613 / 0.546 / 0.366 | 0.614 / 0.548 / 0.369 | 0.615 / 0.548 / 0.370 | 0.628 / 0.563 / 0.348 |
+| ridge / linear | 0.605 / 0.569 / 0.356 | 0.606 / 0.569 / 0.357 | 0.609 / 0.572 / 0.361 | 0.622 / 0.582 / 0.342 |
+
+Values are Pearson / Spearman / R2 (5-fold mean; fold std ≈ 0.03–0.04, about 3× larger than SELEX). Before (leaky single split): best was DFN 0.618 / 0.553 / 0.309, ridge 0.594 / 0.573 / 0.345.
+
+**Best uPBM model:** it depends on the metric, and every model is within about one fold-std of the others. By Pearson and R2, the **Transformer with RC averaging and one-hot** leads (0.642 / 0.584 / 0.408). By Spearman, **CNN1D or CNNAttention with log target + Huber** lead (0.589 ± 0.04). SVR (0.630 / 0.574 / 0.385) and even ridge with log targets (Spearman 0.582, about 1 s per CV) are essentially as good.
+
+**What helped on uPBM** (small, but consistent across models)
+* **One-hot channels:** +0.01–0.02 Spearman and +0.015–0.03 R2 for the neural nets.
+* **Log target + Huber:** +0.01–0.03 Spearman for every model, but R2 drops by 0.01–0.03 (back-transformation of extremes, as on gcPBM).
+* **RC averaging:** about +0.007 Spearman for the neural nets.
+* **Interpretation:** uPBM looks label-noise-limited. Duplicate 10-mers from different probes agree only at r = 0.42 (see audit), and every model class lands at Spearman 0.55–0.59. Architecture changes are unlikely to move it much.
+* **Legacy uPBM numbers are not like-for-like.** Legacy runs train and score on all 11,022 raw rows, including the oversampled top-value duplicates (grouped, so no leakage), whereas fixed runs score once per unique sequence with averaged labels. The legacy rows score slightly higher on Spearman (SVR 0.607, DFN 0.599) with lower fold std, but their RMSE is worse (SVR 0.080 vs 0.074). The likely reason (unverified) is that repeated high-affinity rows widen the test range.
+
+## Overall recommendations / next steps
+1. **Default architecture:** CNN1D with RC averaging and one-hot channels. It is best or tied on SELEX and gcPBM (with log/Huber on gcPBM's heavy-tailed intensities), and competitive on uPBM, at roughly half the cost of CNNAttention and a quarter of the Transformer.
+2. **Resolve the data provenance questions first.** The "Gata4" SELEX file shows an ETS motif, and `SELEX_test.txt` is a uPBM copy. Until those are settled, the SELEX numbers should not be presented as Gata4 results.
+3. **uPBM:** rather than tuning models, recover the original 35-mer probe intensities (or replicate arrays) and train on de-duplicated, unsampled data. The current file is MinMax-normalised and bin-resampled, which caps achievable correlation.
+4. **Seeds and significance:** repeat the top 2–3 configs per dataset with 3 seeds. Use paired per-fold comparisons, since many uPBM differences are inside fold noise.
+5. **Cheap gains to try:** tune Huber δ and weight decay for the CNNs, run a small CNN1D+SVR/ridge ensemble (especially for uPBM), and run a held-out evaluation on a cross-platform pair (train uPBM, test SELEX ranks) once the SELEX provenance is confirmed.
