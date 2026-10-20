@@ -5,12 +5,9 @@ wrapper that exposes the common fit/predict interface, including mini-batch
 training with optional per-sample weighted MSE loss.
 """
 
-import numpy as np
-import torch
 import torch.nn as nn
-import torch.optim as optim
 
-from dnaffinity.models.base import BaseRegressor
+from dnaffinity.models.torch_base import TorchRegressor
 
 
 class FeedForward(nn.Module):
@@ -87,98 +84,18 @@ class RegressionCV(nn.Module):
         return self.nn(x)
 
 
-class DFN(BaseRegressor):
-    """PyTorch feedforward regressor with mini-batch (optionally weighted) MSE training."""
+class DFN(TorchRegressor):
+    """PyTorch feedforward regressor using the shared training loop."""
 
-    def __init__(self, layers=None, lr=0.001, normalization=True, num_epochs=100, batch_size=32, **_ignored):
-        self.layers = layers if layers is not None else [64, 32, 1]
-        self.lr = lr
-        self.normalization = normalization
-        self.num_epochs = num_epochs
-        self.batch_size = batch_size
-        self.net = None
-        self.optimizer = None
-        self.criterion = None
-        self._device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.device = torch.device(self._device_str)
+    architecture = 'DFN'
 
-    def fit(self, X, y, sample_weight=None):
-        X = np.asarray(X, dtype=np.float32)
-        y = np.asarray(y, dtype=np.float32).ravel()
+    def __init__(self, layers=None, dropout=0.0, **kwargs):
+        super().__init__(**kwargs)
+        self.layers = list(layers) if layers is not None else [64, 32, 1]
+        self.dropout = dropout
 
+    def _build_net(self, X):
         in_features = X.shape[1]
-        self.net = RegressionCV(model=self.layers, in_features=in_features,
-                                normalization=self.normalization)
-        self.net.to(self.device)
-        self.optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
-        self.criterion = nn.MSELoss()
-        print(f"Using simple PyTorch regression model on device: {self.device}")
-        print(f"Model architecture: {in_features} -> {' -> '.join(map(str, self.layers))}")
-
-        X_train = torch.tensor(X, dtype=torch.float32).to(self.device)
-        y_train = torch.tensor(y, dtype=torch.float32).to(self.device)
-        if sample_weight is not None:
-            w_train = torch.tensor(np.asarray(sample_weight, dtype=np.float32),
-                                   dtype=torch.float32).to(self.device)
-        else:
-            w_train = None
-
-        self.net.train()
-        print("Start training...")
-        for epoch in range(self.num_epochs):
-            total_loss = 0
-            n_batches = 0
-
-            for i in range(0, len(X_train), self.batch_size):
-                batch_end = min(i + self.batch_size, len(X_train))
-                X_batch = X_train[i:batch_end]
-                y_batch = y_train[i:batch_end]
-
-                self.optimizer.zero_grad()
-                y_pred = self.net(X_batch)
-
-                if w_train is not None:
-                    w_batch = w_train[i:batch_end]
-                    loss = torch.mean(w_batch * (y_pred.squeeze() - y_batch) ** 2)
-                else:
-                    loss = self.criterion(y_pred.squeeze(), y_batch)
-
-                loss.backward()
-                self.optimizer.step()
-
-                total_loss += loss.item()
-                n_batches += 1
-
-            if epoch % 20 == 0 or epoch == self.num_epochs - 1:
-                print(f"Epoch {epoch + 1}/{self.num_epochs}, Loss: {total_loss / n_batches:.6f}")
-
-        print("PyTorch regression model training completed")
-
-    def predict(self, X):
-        X_tensor = torch.tensor(np.asarray(X, dtype=np.float32), dtype=torch.float32).to(self.device)
-        self.net.eval()
-        with torch.no_grad():
-            return self.net(X_tensor).cpu().numpy()
-
-    def state_dict(self):
-        return self.net.state_dict()
-
-    def __getstate__(self):
-        """Custom pickle state - exclude non-pickleable PyTorch objects."""
-        state = self.__dict__.copy()
-        state.pop('optimizer', None)
-        state.pop('criterion', None)
-        state.pop('device', None)
-        return state
-
-    def __setstate__(self, state):
-        """Restore state after unpickling - recreate PyTorch objects."""
-        self.__dict__.update(state)
-        self.device = torch.device(self._device_str if torch.cuda.is_available()
-                                   or self._device_str == 'cpu' else 'cpu')
-        self.criterion = nn.MSELoss()
-        if self.net is not None:
-            self.net.to(self.device)
-            self.optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
-        else:
-            self.optimizer = None
+        net = FeedForward([in_features] + self.layers, dropout=self.dropout)
+        return RegressionCV(net, in_features=in_features,
+                            normalization=self.model_kwargs.get('normalization', True))
