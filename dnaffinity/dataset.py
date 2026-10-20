@@ -11,7 +11,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
 
 np.random.seed(20)
 
@@ -39,6 +38,11 @@ class Dataset:
         inv_seq_data["ID_REF"] = inv_seq_data["ID_REF"].apply(self.inv_seq)
         self.pbm35 = pd.concat([self.pbm35, inv_seq_data])
         self.pbm35.reset_index(inplace=True)
+        # canonical-sequence group id per row: a sequence and its reverse
+        # complement (and any duplicates) share a group, so splits on groups
+        # keep both strands on the same side
+        canon = self.pbm35['ID_REF'].map(lambda q: min(q, self.inv_seq(q)))
+        self.groups = pd.factorize(canon)[0]
 
         self.feats = list(chosen_features)
         self.score = score
@@ -77,6 +81,11 @@ class Dataset:
             self.tetra_fce_reduced = np.array([np.concatenate([tetra_fce_reduced[otmer[i:i+4]]
                                                                for i in self.selected_tetramers])
                                                for otmer in self.sequences])
+        if 'onehot_window' in self.feats:
+            # per-window one-hot of the 4 bases of each tetramer window (16 per window)
+            onehot = np.array([self.onehot_encoding(otmer) for otmer in self.sequences])
+            self.onehot_window = np.concatenate([onehot[:, 4 * i:4 * i + 16] for i in self.selected_tetramers],
+                                                axis=1)
         if 'onehot_1mer' in self.feats:
             self.onehot_1mer = np.array([self.onehot_encoding(otmer) for otmer in self.sequences])
         if 'integer' in self.feats:
@@ -92,7 +101,7 @@ class Dataset:
             self.mgw = np.array([np.concatenate([self.mgw[otmer[i:i+4]] for i in self.selected_tetramers])
                                  for otmer in self.sequences])
         if 'electrostatic' in self.feats:
-            self.electrostatic = {line.split()[0]: [x for x in line.split()[1:]]
+            self.electrostatic = {line.split()[0]: [float(x) for x in line.split()[1:]]
                                   for line in open(DATA_DIR / 'electrostatic.txt') if 'SHIFT' not in line}
             self.electrostatic = np.array([np.concatenate([self.electrostatic[otmer[i:i+4]]
                                                            for i in self.selected_tetramers])
@@ -122,13 +131,13 @@ class Dataset:
     def scores(self):
         keyw = "VALUE" if self.score == 'Median_intensity' else "Z-score"
         if self.model_target == "octamers":
-            vals = self.pbm35[keyw].values
-            return MinMaxScaler().fit_transform(vals.reshape(-1, 1))
+            # raw labels; scaling is fitted on the training split inside Model
+            return self.pbm35[keyw].values.astype(float).reshape(-1, 1)
         elif self.model_target == "tetramers":
             mean_scores = self.mean_score()
             vals = np.array([[mean_scores[i][otmer[i:i+4]] for i in self.selected_tetramers]
                              for otmer in self.sequences])
-            return MinMaxScaler().fit_transform(vals)
+            return vals.astype(float)
 
     @staticmethod
     def inv_seq(seq):
@@ -139,7 +148,8 @@ class Dataset:
     def features(self):
         avail = {'avg': 'tetra_avg', 'full_fce': 'tetra_fce', 'diagonal_fce': 'tetra_fce_reduced',
                  'onehot_1mer': 'onehot_1mer', 'integer': 'integer',
-                 'presence_tetramer': 'presence_tetra', 'mgw': 'mgw', 'electrostatic': 'electrostatic'}
+                 'presence_tetramer': 'presence_tetra', 'mgw': 'mgw', 'electrostatic': 'electrostatic',
+                 'onehot_window': 'onehot_window'}
         return np.hstack([self.__getattribute__(avail[feat]) for feat in self.feats])
 
     _POSITIONAL_FEATS = {
@@ -148,6 +158,7 @@ class Dataset:
         'diagonal_fce': 'tetra_fce_reduced',
         'mgw': 'mgw',
         'electrostatic': 'electrostatic',
+        'onehot_window': 'onehot_window',
     }
     _NON_POSITIONAL_FEATS = frozenset(
         {'presence_tetramer', 'onehot_1mer', 'integer'}
