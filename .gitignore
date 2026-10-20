@@ -8,7 +8,9 @@ __pycache__/
 *.pywz
 *.pyzw
 *.pyzwz
-trained_models/
+*.egg-info/
+outputs/
 *.sav
 *.pth
 *.pck
+.pytest_cache/

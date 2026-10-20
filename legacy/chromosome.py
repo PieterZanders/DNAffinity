@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -14,18 +16,18 @@ from sklearn.preprocessing import StandardScaler
 protein = 'cbf1'
 concentration = '100'  # '100' or '200'
 experiment = 'chip'  # 'chip' or 'pb' for in vivo or in vitro resp.
-base_dir = f'test_data'
-# NOTE: base_dir has to contain directories base_dir/gcPBM/{protein}/... and base_dir/input
-data_dir = f'{base_dir}/gcPBM/{protein}'
+base_dir = str(Path(__file__).resolve().parents[1] / 'data' / 'gcpbm')
+# NOTE: base_dir has to contain directories base_dir/{protein}/... 
+data_dir = f'{base_dir}/{protein}'
 
 #####################################
 # files required to run:
 # '{data_dir}/{protein}_{experiment}-exo.gff'
 # '{data_dir}/{protein}_rep1_peaks.bed'
 # '{data_dir}/{protein}_dictionary_{chrsome}_{number}.txt'
-# '{base_dir}/gcPBM/MACS2_ph0_R1_narrowPeaks.bed'
-# '{base_dir}/gcPBM/MACS2_ph0_R2_narrowPeaks.bed'
-# '{base_dir}/gcPBM/{chrsome}_{number}.fa'
+# '{base_dir}/MACS2_ph0_R1_narrowPeaks.bed'
+# '{base_dir}/MACS2_ph0_R2_narrowPeaks.bed'
+# '{base_dir}/{chrsome}_{number}.fa'
 # ... more?
 #####################################
 
@@ -87,7 +89,7 @@ end_bp = 100000 * number
 
 print(start_bp, end_bp, end_bp - start_bp)
 
-fasta = SeqIO.read(f"{base_dir}/gcPBM/{chrsome}_{number}.fa", "fasta")
+fasta = SeqIO.read(f"{base_dir}/{chrsome}_{number}.fa", "fasta")
 sequence = str(fasta.seq)
 
 chr4 = proc_peaks[proc_peaks['chr'] == chrsome]
@@ -257,8 +259,8 @@ for j in range(len(affinities)):
 
 # polymerase TODO paths
 
-pol_peaks_1 = pd.read_csv(f'{base_dir}/gcPBM/MACS2_ph0_R1_narrowPeaks.bed', sep='\t', header=None)
-pol_peaks_2 = pd.read_csv(f'{base_dir}/gcPBM/MACS2_ph0_R2_narrowPeaks.bed', sep='\t', header=None)
+pol_peaks_1 = pd.read_csv(f'{base_dir}/MACS2_ph0_R1_narrowPeaks.bed', sep='\t', header=None)
+pol_peaks_2 = pd.read_csv(f'{base_dir}/MACS2_ph0_R2_narrowPeaks.bed', sep='\t', header=None)
 pol_peaks_1.rename({0: "chr", 1: "start", 2: "end", 4: "score"}, axis="columns", inplace=True)
 pol_peaks_2.rename({0: "chr", 1: "start", 2: "end", 4: "score"}, axis="columns", inplace=True)
 pol_peaks_1 = pol_peaks_1[['chr', 'start', 'end', 'score']]
@@ -356,10 +358,10 @@ window_end = 59000
 width = 24
 height = 4
 
-if not os.path.isdir(f'{base_dir}/gcPBM/figures'):
-    os.mkdir(f'{base_dir}/gcPBM/figures')
-if not os.path.isdir(f'{base_dir}/gcPBM/figures/{tipo}'):
-    os.mkdir(f'{base_dir}/gcPBM/figures/{tipo}')
+if not os.path.isdir(f'{base_dir}/figures'):
+    os.mkdir(f'{base_dir}/figures')
+if not os.path.isdir(f'{base_dir}/figures/{tipo}'):
+    os.mkdir(f'{base_dir}/figures/{tipo}')
 
 fig = plt.gcf()
 fig.set_size_inches(width, height)
@@ -373,7 +375,7 @@ plt.title(f'{chr_r} sequence')
 labels = ['PB-exo', 'ChIP-exo', 'Polymerase']
 plt.legend(labels, loc="best", prop={'size': 20})
 plt.show()
-fig.savefig(f'{base_dir}/gcPBM/figures/{tipo}/pbchippoly.png')
+fig.savefig(f'{base_dir}/figures/{tipo}/pbchippoly.png')
 plt.clf()
 
 fig = plt.gcf()
@@ -384,7 +386,7 @@ plt.title(f'{chr_r} sequence')
 labels = ['ML Prediction']
 plt.legend(labels, loc="best", prop={'size': 20})
 plt.show()
-fig.savefig(f'{base_dir}/gcPBM/figures/{tipo}/prediction.png')
+fig.savefig(f'{base_dir}/figures/{tipo}/prediction.png')
 plt.clf()
 
 fig = plt.gcf()
@@ -395,7 +397,7 @@ plt.title(f'{chr_r} sequence')
 labels = ["Nucleosomes"]
 plt.legend(labels, loc="best", prop={'size': 20})
 plt.show()
-fig.savefig(f'{base_dir}/gcPBM/figures/{tipo}/nucleosomes.png')
+fig.savefig(f'{base_dir}/figures/{tipo}/nucleosomes.png')
 
 window_start = 36 * 1000
 window_end = 37 * 1000
@@ -716,7 +718,7 @@ DF.index = [i for i in range(len(DF))]
 df = DF.drop(l)[['PROTEINS', 'P+A+D', 'correlation', 0, 'presence', 'electro', 'shape']]
 f_upbm = list(df.mean()[['presence', 'electro', 'shape']])
 
-gcpbm_feat = pd.read_csv(f'{base_dir}/gcPBM/feature_study/gcpbm_features.txt', sep='\t', header=None)
+gcpbm_feat = pd.read_csv(f'{base_dir}/feature_study/gcpbm_features.txt', sep='\t', header=None)
 gcpbm_feat.rename({1: "presence", 2: 'electro', 3: 'shape'}, axis="columns", inplace=True)
 f_gcpbm = list(gcpbm_feat.mean())
 

@@ -1,0 +1,11 @@
+{
+  "lr": 0.001,
+  "normalization": true,
+  "num_epochs": 100,
+  "batch_size": 32,
+  "dropout": 0.1,
+  "hidden_dim": 64,
+  "num_blocks": 2,
+  "kernel_size": 3,
+  "pool": "avg"
+}

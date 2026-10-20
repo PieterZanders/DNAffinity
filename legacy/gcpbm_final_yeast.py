@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 ### conda code v1
 
-!pip install biopython
-!pip install folium
-!curl -O https://raw.githubusercontent.com/jperkel/example_notebook/master/NC_005816.gb
+# !pip install biopython
+# !pip install folium
+# !curl -O https://raw.githubusercontent.com/jperkel/example_notebook/master/NC_005816.gb
 
 ##################
 
@@ -12,9 +12,9 @@ import os
 from itertools import product
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt1
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 from sklearn import metrics
 from sklearn.linear_model import LinearRegression
@@ -1994,7 +1994,7 @@ plt.plot(new_shape_corr-only_shape_corr)
 plt.plot(np.arange(0,19.01,19),[0,0],  color = 'red',linewidth=1)
 
 print(new_shape_corr.mean(), only_shape_corr.mean())
- print((new_shape_corr.drop('tbx15')).mean(), (only_shape_corr.drop('tbx15')).mean())
+print((new_shape_corr.drop('tbx15')).mean(), (only_shape_corr.drop('tbx15')).mean())
 
 improv = list(new_shape_corr-only_shape_corr)
 print('We improve corr on',sum([1 for k in range(19) if improv[k]>0]))

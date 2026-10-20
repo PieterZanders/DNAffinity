@@ -1,0 +1,13 @@
+{
+  "lr": 0.001,
+  "normalization": true,
+  "num_epochs": 100,
+  "batch_size": 32,
+  "dropout": 0.1,
+  "d_model": 64,
+  "num_layers": 2,
+  "nhead": 4,
+  "dim_feedforward": 128,
+  "pos_encoding": "sinusoidal",
+  "pooling": "cls"
+}
