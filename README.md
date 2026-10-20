@@ -205,6 +205,7 @@ If no config file is provided, default parameters are used. The config file can 
 Each script writes to `outputs/{method}/{protein}/{regressor}/` (gitignored), so different models for the same protein do not overwrite each other. Every run produces:
 - the trained model (`model.sav` for uPBM/SELEX, `model.pck` for gcPBM)
 - `predictions.png` — predicted vs ground-truth values for both the training and test split
+- `training_curve.png` — per-epoch training and validation loss (validation split held out from training), for PyTorch models
 - `feature_importances.png` and `top_features.png` — for models that provide importances (random forest)
 - SELEX additionally keeps its intermediate training files next to the model
 
@@ -221,4 +222,20 @@ python scripts/run_selex.py --protein Gata4 --cycle 4 --regressor random_forest
 
 # gcPBM with custom config
 python scripts/run_gcpbm.py --protein cbf1 --concentration 100 --config configs/dfn_config.json --regressor DFN
+```
+
+### From Python
+
+`Model` builds the regressor but does not train it, so the architecture can be inspected first:
+
+```python
+from dnaffinity import Dataset, Model
+from dnaffinity.plotting import plot_predictions, plot_training_curve
+
+model = Model(dataset, len_aln, regressor='CNN1D', training_set_size=0.9,
+              pytorch_model_params={'num_epochs': 50})
+print(model)               # split, input shape and network architecture
+model.train()              # tqdm progress bar with train / validation loss
+model.predict()            # test and train r2
+plot_training_curve(model.history)
 ```

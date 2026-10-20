@@ -2,14 +2,20 @@
 
 All model-specific logic (sklearn vs PyTorch) lives in dnaffinity.models; this
 class is backend-agnostic and talks to the regressors through the
-BaseRegressor interface (fit / predict / feature_importances / state_dict).
+BaseRegressor interface (build / fit / predict / feature_importances / state_dict).
+
+Usage:
+    model = Model(dataset, len_aln, regressor='DFN')   # builds, does not train
+    print(model)                                       # split + architecture summary
+    model.train()
+    model.predict()
 
 Splitting is done on Dataset.groups (one group per canonical sequence), so a
 sequence, its reverse complement and any duplicates always land in the same
 split. A validation split is carved out of the training groups for early
 stopping. Features and targets are standardized with statistics from the
 training rows only; predictions are mapped back to the original label scale
-before metrics are computed. Metrics are computed per unique sequence group.
+before metrics are computed.
 """
 
 import numpy as np
@@ -93,7 +99,7 @@ class Model:
     def __init__(self, dataset, len_aln, regressor='random_forest', training_set_size=0.8,
                  weighted=False, pytorch_model_params=None, model_params=None, seed=0,
                  val_size=0.1, train_idx=None, test_idx=None, scale_features=True,
-                 scale_target=True, target_transform=None, rc_average=False, fit=True):
+                 scale_target=True, target_transform=None, rc_average=False):
         """
         :param training_set_size: fraction of sequence groups used for train+val
                                   (ignored when train_idx/test_idx are given)
@@ -132,8 +138,32 @@ class Model:
         self.y_pred = self.r2 = self.mse = self.mae = None
         self.y_train_pred = self.r2_train = None
         self.test_metrics = {}
-        if fit:
-            self.train()
+        self.weighted = weighted
+        self.trained = False
+        # build the network up front so print(model) shows the full architecture
+        self.regressor.build(self.X.shape[1:])
+
+    @property
+    def history(self):
+        """Per-epoch losses {'train': [...], 'val': [...]} for iterative models, else None."""
+        return self.regressor.history
+
+    def __repr__(self):
+        n_groups = len(np.unique(self.groups))
+        if self.train_idx is not None and self.test_idx is not None:
+            split = f"{len(self.train_idx)} train+val / {len(self.test_idx)} test rows"
+        else:
+            split = f"{self.training_set_size:.0%} of {n_groups} sequence groups for train+val (group split)"
+        lines = [
+            f"Model(regressor={self.regressor_name!r}, protein={self.data.protein!r})",
+            f"  features: {self.regressor.input_format} {tuple(self.X.shape)}",
+            f"  split:    {split}{' (weighted)' if self.weighted else ''}",
+            f"  status:   {'trained' if self.trained else 'not trained'}"
+            + (f", test r2 = {self.r2}, train r2 = {self.r2_train}" if self.r2 is not None else ''),
+            "  architecture:",
+        ]
+        lines += ['    ' + line for line in repr(self.regressor).splitlines()]
+        return '\n'.join(lines)
 
     # ------------------------------------------------------------------
     def _split(self):
@@ -170,7 +200,10 @@ class Model:
             wv = None if self.weights is None else self.weights[self.val_idx]
             kwargs['eval_set'] = (self._prep_X(self.val_idx), tf(y[self.val_idx]), wv)
         self.regressor.fit(self.X_train, tf(self.y_train), **kwargs)
+        self.features, self.l = [], []
         self._extract_feature_importances()
+        self.trained = True
+        return self
 
     def _raw_predict(self, X, idx):
         z = np.asarray(self.regressor.predict(X), dtype=np.float64).ravel()
@@ -189,9 +222,12 @@ class Model:
     def predict(self, testing_dataset=None):
         """
         Predict the internal test split (or an external Dataset) and set metrics:
-        r2, mse (true mean squared error), mae, rmse, pearson, spearman. Internal
-        test metrics are computed per unique sequence group (both strands averaged).
+        r2, mse (true mean squared error), mae, rmse, pearson, spearman. With
+        rc_average the internal test metrics are computed per unique sequence
+        (strand-averaged prediction), otherwise per strand (row).
         """
+        if not self.trained:
+            raise RuntimeError("Model is not trained yet; call model.train() first")
         if testing_dataset is not None:
             Xe = (testing_dataset.windowed_features if self.regressor.input_format == 'windows'
                   else testing_dataset.features)
@@ -202,7 +238,12 @@ class Model:
             yt, yp = self.y_test, self.y_pred
         else:
             self.y_pred = self._raw_predict(self.X_test, self.test_idx)
-            yt, yp = self._group_level(self.y_test, self.y_pred, self.test_idx)
+            if self.rc_average:
+                # one (strand-averaged) prediction per unique sequence
+                yt, yp = self._group_level(self.y_test, self.y_pred, self.test_idx)
+            else:
+                # every strand is scored separately
+                yt, yp = self.y_test, self.y_pred
         self.y_pred = self.y_pred.reshape(-1, 1)
         self.y_test = np.asarray(self.y_test).reshape(-1, 1)
         self.test_metrics = regression_metrics(yt, yp)
@@ -250,7 +291,7 @@ def cross_validate(dataset, len_aln, regressor, n_folds=5, seed=0, verbose=True,
     gkf = GroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
     rows = []
     for k, (tr, te) in enumerate(gkf.split(np.arange(len(groups)), groups=groups)):
-        m = Model(dataset, len_aln, regressor, train_idx=tr, test_idx=te, seed=seed + k, **model_kwargs)
+        m = Model(dataset, len_aln, regressor, train_idx=tr, test_idx=te, seed=seed + k, **model_kwargs).train()
         res = dict(fold=k, **m.predict(), r2_train=float(m.r2_train),
                    epochs=getattr(m.regressor, 'epochs_trained', None),
                    n_train=len(m.fit_idx), n_val=len(m.val_idx), n_test_groups=len(np.unique(groups[te])))

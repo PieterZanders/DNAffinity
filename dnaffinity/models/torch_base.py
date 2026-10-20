@@ -12,6 +12,7 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
+from tqdm.auto import tqdm
 
 from dnaffinity.models.base import BaseRegressor
 
@@ -22,7 +23,8 @@ class TorchRegressor(BaseRegressor):
 
     def __init__(self, lr=0.001, normalization=True, num_epochs=100, batch_size=32,
                  weight_decay=1e-4, patience=15, warmup_epochs=0, scheduler='plateau',
-                 loss='mse', huber_delta=1.0, seed=0, verbose=False, **model_kwargs):
+                 loss='mse', huber_delta=1.0, seed=0, verbose=False, progress=True,
+                 **model_kwargs):
         self.lr = lr
         self.normalization = normalization
         self.num_epochs = num_epochs
@@ -35,20 +37,33 @@ class TorchRegressor(BaseRegressor):
         self.huber_delta = huber_delta
         self.seed = seed
         self.verbose = verbose
+        self.progress = progress
+        self.input_shape = None
         self.model_kwargs = dict(model_kwargs)
         self.model_kwargs.setdefault('normalization', normalization)
         self.net = None
-        self.history = []
+        self.history = None
         self.best_epoch = None
+        self.epochs_trained = 0
         self._device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.device = torch.device(self._device_str)
 
     # -- hooks -------------------------------------------------------------
     def _check_input(self, X):
+        if X.ndim != 2:
+            raise ValueError(f"{self.architecture} expects X with shape (n_samples, n_features), got {X.shape}")
         return X
 
-    def _build_net(self, X):
+    def _build_net(self, input_shape):
+        """Return the nn.Module for inputs of shape input_shape (no sample axis)."""
         raise NotImplementedError
+
+    def build(self, input_shape):
+        """(Re)initialise the network for the given input shape (seeded)."""
+        torch.manual_seed(self.seed)
+        self.input_shape = tuple(input_shape)
+        self.net = self._build_net(self.input_shape).to(self.device)
+        self.history = None
 
     # -- training ----------------------------------------------------------
     def _loss(self, pred, target, w=None):
@@ -77,9 +92,8 @@ class TorchRegressor(BaseRegressor):
         return 1.0
 
     def fit(self, X, y, sample_weight=None, eval_set=None):
-        torch.manual_seed(self.seed)
         X_t, y_t, w_t = self._to_tensors(X, y, sample_weight)
-        self.net = self._build_net(X_t).to(self.device)
+        self.build(X_t.shape[1:])  # fresh, seeded weights on every fit
         opt = torch.optim.AdamW(self.net.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         plateau = (torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=max(1, self.patience // 3))
                    if self.scheduler == 'plateau' else None)
@@ -88,9 +102,11 @@ class TorchRegressor(BaseRegressor):
             Xv, yv, wv = self._to_tensors(Xv, yv, wv)
         gen = torch.Generator().manual_seed(self.seed)
         best, best_state, bad = float('inf'), None, 0
-        self.history = []
+        self.history = {'train': [], 'val': [] if eval_set is not None else None}
         n = len(X_t)
-        for epoch in range(self.num_epochs):
+        progress = tqdm(range(self.num_epochs), desc=f'{self.architecture} [{self.device}]',
+                        unit='epoch', disable=not self.progress)
+        for epoch in progress:
             if plateau is None or (self.warmup_epochs and epoch < self.warmup_epochs):
                 for g in opt.param_groups:
                     g['lr'] = self.lr * self._lr_factor(epoch)
@@ -109,11 +125,13 @@ class TorchRegressor(BaseRegressor):
                 opt.step()
                 total += loss.item() * len(idx)
             train_loss = total / n
+            self.history['train'].append(train_loss)
             if eval_set is not None:
                 self.net.eval()
                 with torch.no_grad():
                     vloss = self._loss(self._predict_tensor(Xv), yv, wv).item()
-                self.history.append((epoch, train_loss, vloss))
+                self.history['val'].append(vloss)
+                progress.set_postfix(loss=f'{train_loss:.4f}', val_loss=f'{vloss:.4f}')
                 if plateau is not None and epoch >= self.warmup_epochs:
                     plateau.step(vloss)
                 if vloss < best - 1e-6:
@@ -124,19 +142,18 @@ class TorchRegressor(BaseRegressor):
                     if bad >= self.patience:
                         break
             else:
-                self.history.append((epoch, train_loss, None))
-            if self.verbose and (epoch % 10 == 0):
-                print(f"{self.architecture} epoch {epoch + 1}: train {train_loss:.4f}"
-                      + (f" val {self.history[-1][2]:.4f}" if eval_set is not None else ''))
+                progress.set_postfix(loss=f'{train_loss:.4f}')
         if best_state is not None:
             self.net.load_state_dict(best_state)
-        self.epochs_trained = len(self.history)
+        self.epochs_trained = len(self.history['train'])
         return self
 
     def _predict_tensor(self, X_t, chunk=4096):
         return torch.cat([self.net(X_t[i:i + chunk]).reshape(-1) for i in range(0, len(X_t), chunk)])
 
     def predict(self, X):
+        if self.net is None:
+            raise RuntimeError(f"{self.architecture} has not been trained yet; call fit() first")
         X_t, _, _ = self._to_tensors(X)
         self.net.eval()
         with torch.no_grad():
@@ -145,12 +162,29 @@ class TorchRegressor(BaseRegressor):
     def state_dict(self):
         return self.net.state_dict() if self.net is not None else None
 
+    def n_parameters(self):
+        if self.net is None:
+            return 0
+        return sum(p.numel() for p in self.net.parameters() if p.requires_grad)
+
+    def __repr__(self):
+        hparams = {'lr': self.lr, 'num_epochs': self.num_epochs, 'batch_size': self.batch_size,
+                   'weight_decay': self.weight_decay, 'loss': self.loss, **self.model_kwargs}
+        header = f"{self.architecture}({', '.join(f'{k}={v}' for k, v in hparams.items())})"
+        if self.net is None:
+            return f"{header}\n  network not built yet (built from the input shape)"
+        return (f"{header}\n  input shape: (batch, {', '.join(map(str, self.input_shape))})\n"
+                f"  trainable parameters: {self.n_parameters():,}\n{self.net}")
+
     def __getstate__(self):
         state = self.__dict__.copy()
         state.pop('device', None)
         return state
 
     def __setstate__(self, state):
+        state.setdefault('input_shape', None)
+        state.setdefault('history', None)
+        state.setdefault('model_kwargs', {})
         self.__dict__.update(state)
         self.device = torch.device('cpu')
         if self.net is not None:

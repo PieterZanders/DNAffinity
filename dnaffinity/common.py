@@ -157,6 +157,9 @@ def train_model(df_train, args, chosen_features, pytorch_params, weighted=False,
         summ = cv[['pearson', 'spearman', 'r2', 'rmse']].agg(['mean', 'std'])
         print(f'{args.cv}-fold CV summary:\n{summ.round(4)}')
     model = Model(dset_train, len_aln, args.regressor, args.training_set_size, seed=seed, **model_kwargs)
+    print(model)
+    start_time = time.time()
+    model.train()
     print(f'{label} model has been trained')
     print("It took %s seconds" % (time.time() - start_time))
 

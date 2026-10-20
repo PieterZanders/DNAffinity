@@ -65,7 +65,7 @@ def test_model_no_leakage_and_train_only_scaling(reg):
     df = _toy_df(150)
     d = Dataset('x', df, chosen_features=['presence_tetramer', 'avg'], selected_tetramers=range(7))
     m = Model(d, 10, reg, training_set_size=0.8, seed=1,
-              pytorch_model_params={'num_epochs': 3, 'batch_size': 32})
+              pytorch_model_params={'num_epochs': 3, 'batch_size': 32}).train()
     assert not set(d.groups[m.fit_idx]) & set(d.groups[m.test_idx])
     assert not set(d.groups[m.val_idx]) & set(d.groups[m.test_idx])
     ref = FeatureScaler().fit(d.features[m.fit_idx])
@@ -79,7 +79,7 @@ def test_model_no_leakage_and_train_only_scaling(reg):
 def test_rc_average_gives_equal_strand_predictions():
     d = Dataset('x', _toy_df(80), chosen_features=['avg'], selected_tetramers=range(7))
     m = Model(d, 10, 'CNN1D', seed=0, rc_average=True,
-              pytorch_model_params={'num_epochs': 2, 'batch_size': 32})
+              pytorch_model_params={'num_epochs': 2, 'batch_size': 32}).train()
     m.predict()
     p = pd.Series(m.y_pred.ravel()).groupby(d.groups[m.test_idx]).nunique()
     assert (p == 1).all()
@@ -141,7 +141,7 @@ def test_gata4_real_data_split_has_no_shared_sequences():
     df = load_upbm(GATA4)
     assert df['ID_REF'].is_unique
     d = Dataset('Gata4', df.head(300), chosen_features=['avg'], selected_tetramers=range(7), weighted=True)
-    m = Model(d, 10, 'linear', weighted=True, seed=0)
+    m = Model(d, 10, 'linear', weighted=True, seed=0).train()
     seqs = np.array(d.sequences)
     test_seqs = set(seqs[m.test_idx])
     train_all = set(seqs[m.fit_idx])

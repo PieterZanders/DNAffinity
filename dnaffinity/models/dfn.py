@@ -93,9 +93,10 @@ class DFN(TorchRegressor):
         super().__init__(**kwargs)
         self.layers = list(layers) if layers is not None else [64, 32, 1]
         self.dropout = dropout
+        self.model_kwargs['layers'] = self.layers
 
-    def _build_net(self, X):
-        in_features = X.shape[1]
+    def _build_net(self, input_shape):
+        in_features = input_shape[-1]
         net = FeedForward([in_features] + self.layers, dropout=self.dropout)
         return RegressionCV(net, in_features=in_features,
                             normalization=self.model_kwargs.get('normalization', True))

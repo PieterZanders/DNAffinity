@@ -103,10 +103,10 @@ class CNN1DRegressor(WindowTorchRegressor):
 
     architecture = 'CNN1D'
 
-    def _build_net(self, X):
+    def _build_net(self, input_shape):
         kw = self.model_kwargs
         return CNN1D(
-            feat_dim=X.shape[2],
+            feat_dim=input_shape[-1],
             hidden_dim=kw.get('hidden_dim', 64),
             num_blocks=kw.get('num_blocks', 2),
             kernel_size=kw.get('kernel_size', 3),

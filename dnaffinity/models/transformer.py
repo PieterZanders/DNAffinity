@@ -111,10 +111,10 @@ class TransformerRegressor(WindowTorchRegressor):
 
     architecture = 'Transformer'
 
-    def _build_net(self, X):
+    def _build_net(self, input_shape):
         kw = self.model_kwargs
         return Transformer(
-            feat_dim=X.shape[2],
+            feat_dim=input_shape[-1],
             d_model=kw.get('d_model', 64),
             num_layers=kw.get('num_layers', 2),
             nhead=kw.get('nhead', 4),
