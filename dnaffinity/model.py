@@ -67,7 +67,6 @@ class Model:
             f"{' (weighted)' if self.weighted else ''}",
             f"  status:   {'trained' if self.trained else 'not trained'}"
             + (f", test r2 = {self.r2}, train r2 = {self.r2_train}" if self.r2 is not None else ''),
-            "  architecture:",
         ]
         lines += ['    ' + line for line in repr(self.regressor).splitlines()]
         return '\n'.join(lines)
