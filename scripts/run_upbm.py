@@ -22,13 +22,19 @@ import pandas as pd
 from dnaffinity.common import (OUTPUTS_DIR, ROOT, build_parser, default_params,
                                load_pytorch_params, save_model, train_model)
 from dnaffinity.plotting import save_plots
+from dnaffinity.preprocess import load_upbm
 
 parser = build_parser('uPBM regressor for affinity prediction',
                       default_data_dir=ROOT / 'data' / 'upbm')
 args = parser.parse_args()
 np.random.seed(20)
 
-df_train = pd.read_csv(f'{args.data_dir}/{args.protein}/{args.protein}_training.txt', sep='\t')
+train_file = f'{args.data_dir}/{args.protein}/{args.protein}_training.txt'
+if args.legacy_preprocessing:
+    df_train = pd.read_csv(train_file, sep='\t')
+else:
+    # collapse duplicate / reverse-complement 10-mers (mean label, max weight)
+    df_train = load_upbm(train_file)
 
 chosen_features = ['presence_tetramer', 'avg', 'diagonal_fce']
 pytorch_params = load_pytorch_params(args.config, default_params(args.regressor))
