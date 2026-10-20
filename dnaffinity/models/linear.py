@@ -9,7 +9,7 @@ class Linear(BaseRegressor):
     def __init__(self):
         self.model = LinearRegression()
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, eval_set=None):
         self.model.fit(X, y, sample_weight=sample_weight)
 
     def predict(self, X):

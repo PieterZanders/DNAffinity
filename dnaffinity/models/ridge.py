@@ -6,10 +6,10 @@ from dnaffinity.models.base import BaseRegressor
 
 
 class Ridge(BaseRegressor):
-    def __init__(self, alpha=0.0001):
+    def __init__(self, alpha=1.0):
         self.model = SklearnRidge(alpha=alpha)
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, eval_set=None):
         self.model.fit(X, y, sample_weight=sample_weight)
 
     def predict(self, X):
