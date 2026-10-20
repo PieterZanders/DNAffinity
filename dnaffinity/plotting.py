@@ -101,12 +101,38 @@ def plot_feature_importances(features, importances_sorted, save_dir=None):
     return df
 
 
+def plot_training_curve(history, save_path=None):
+    """
+    Per-epoch training loss (and validation loss on the test split, if recorded).
+
+    :param history: dict {'train': [...], 'val': [...] or None} (Model.history)
+    :param save_path: optional path to save the figure as an image
+    :return: None (does nothing for models without a loss history)
+    """
+    if not history or not history.get('train'):
+        return
+    epochs = np.arange(1, len(history['train']) + 1)
+    fig = plt.figure(figsize=(6, 4))
+    plt.plot(epochs, history['train'], label='train')
+    if history.get('val'):
+        plt.plot(epochs, history['val'], label='validation (test split)')
+    plt.xlabel('Epoch')
+    plt.ylabel('MSE loss')
+    plt.legend()
+    if save_path is not None:
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+    else:
+        plt.show()
+
+
 def save_plots(model, out_dir):
     """
     Save all available plots for a trained Model into out_dir:
-    'predictions.png' (train + test scatter) always, and
-    'feature_importances.png' / 'top_features.png' when the regressor
-    provides feature importances (e.g. random forest).
+    'predictions.png' (train + test scatter) always, 'training_curve.png'
+    for models trained by epochs (PyTorch), and 'feature_importances.png' /
+    'top_features.png' when the regressor provides feature importances
+    (e.g. random forest).
 
     :param model: trained dnaffinity Model with predict() already called
     :param out_dir: directory to write the images to
@@ -118,4 +144,5 @@ def save_plots(model, out_dir):
                      y_train=model.y_train, y_train_pred=model.y_train_pred,
                      r2_train=model.r2_train,
                      save_path=out_dir / 'predictions.png')
+    plot_training_curve(model.history, save_path=out_dir / 'training_curve.png')
     return plot_feature_importances(model.features, model.l, save_dir=out_dir)

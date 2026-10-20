@@ -115,11 +115,14 @@ def train_model(df_train, args, chosen_features, pytorch_params, weighted=False,
     len_aln = len(strings[0])
     selected_tetramers = list(range(len_aln - 3))
 
-    start_time = time.time()
     dset_train = Dataset(args.protein, df_train, args.model_target, args.randomize_fce,
                          chosen_features, args.score, selected_tetramers, weighted=weighted)
     model = Model(dset_train, len_aln, args.regressor, args.training_set_size,
                   weighted=weighted, pytorch_model_params=pytorch_params)
+    print(model)
+
+    start_time = time.time()
+    model.train()
     print(f'{label} model has been trained')
     print("It took %s seconds" % (time.time() - start_time))
 

@@ -2,8 +2,14 @@
 
 All model-specific logic (sklearn vs PyTorch) lives in dnaffinity.models; this
 class is backend-agnostic and talks to the regressors through the
-BaseRegressor interface (fit / predict / feature_importances / state_dict).
+BaseRegressor interface (build / fit / predict / feature_importances / state_dict).
 Plotting helpers live in dnaffinity.plotting.
+
+Usage:
+    model = Model(dataset, len_aln, regressor='DFN')   # builds, does not train
+    print(model)                                       # architecture summary
+    model.train()
+    model.predict()
 """
 
 import numpy as np
@@ -41,17 +47,37 @@ class Model:
         self.y_pred, self.r2, self.mse = 3 * [None]
         self.y_train_pred, self.r2_train = 2 * [None]
         self.X_train, self.X_test, self.y_train, self.y_test, self.w_train, self.w_test = 6 * [None]
+        self.weighted = weighted
+        self.trained = False
 
-        print("features have shape: ", self.X.shape)
-        print("target values have shape: ", self.y.shape)
+        # build the network up front so print(model) shows the full architecture
+        self.regressor.build(self.X.shape[1:])
 
-        self.train()
+    @property
+    def history(self):
+        """Per-epoch losses {'train': [...], 'val': [...]} for iterative models, else None."""
+        return self.regressor.history
+
+    def __repr__(self):
+        n_train = int(len(self.y) * self.training_set_size)
+        lines = [
+            f"Model(regressor={self.regressor_name!r}, protein={self.data.protein!r})",
+            f"  features: {self.regressor.input_format} {tuple(self.X.shape)}",
+            f"  split:    {n_train} train / {len(self.y) - n_train} test"
+            f"{' (weighted)' if self.weighted else ''}",
+            f"  status:   {'trained' if self.trained else 'not trained'}"
+            + (f", test r2 = {self.r2}, train r2 = {self.r2_train}" if self.r2 is not None else ''),
+            "  architecture:",
+        ]
+        lines += ['    ' + line for line in repr(self.regressor).splitlines()]
+        return '\n'.join(lines)
 
     def train(self):
         """
         Splits the data from the Dataset and trains the regressor, also extracting data
-        on feature importances
-        :return: None
+        on feature importances. The test split is passed as an evaluation set so that
+        iterative models record a validation loss curve (it is not used for fitting).
+        :return: self
         """
         y = self.y.ravel() if len(self.y.shape) > 1 else self.y
 
@@ -68,9 +94,13 @@ class Model:
             self.w_train = None
             self.w_test = None
 
-        self.regressor.fit(self.X_train, self.y_train, sample_weight=self.w_train)
+        self.regressor.fit(self.X_train, self.y_train, sample_weight=self.w_train,
+                           eval_set=(self.X_test, self.y_test, self.w_test))
 
+        self.features, self.l = [], []
         self._extract_feature_importances()
+        self.trained = True
+        return self
 
     def _extract_feature_importances(self):
         """Classify each feature by type and record its importance (tree models only)."""
@@ -111,8 +141,13 @@ class Model:
         :param testing_dataset: Dataset instance, test data to supply for cross-evaluation (optional)
         :return: None
         """
+        if not self.trained:
+            raise RuntimeError("Model is not trained yet; call model.train() first")
         if testing_dataset is not None:
-            self.X_test, self.y_test = testing_dataset.features, testing_dataset.scores
+            self.X_test = (testing_dataset.windowed_features
+                           if self.regressor.input_format == 'windows'
+                           else testing_dataset.features)
+            self.y_test = testing_dataset.scores
         self.y_pred = np.asarray(self.regressor.predict(self.X_test)).reshape(-1, 1)
         self.y_test = np.asarray(self.y_test).reshape(-1, 1)
         self.r2 = np.round(metrics.r2_score(self.y_test, self.y_pred), 3)

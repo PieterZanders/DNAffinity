@@ -1,6 +1,6 @@
 """Model registry: one module per model, resolved by name via get_model()."""
 
-from dnaffinity.models.base import BaseRegressor
+from dnaffinity.models.base import BaseRegressor, SklearnRegressor
 from dnaffinity.models.linear import Linear
 from dnaffinity.models.random_forest import RandomForest
 from dnaffinity.models.ridge import Ridge
@@ -42,6 +42,6 @@ def get_model(name, **params):
 
 
 __all__ = [
-    'BaseRegressor', 'RandomForest', 'Linear', 'Ridge', 'SVR',
+    'BaseRegressor', 'SklearnRegressor', 'RandomForest', 'Linear', 'Ridge', 'SVR',
     'MODEL_NAMES', 'PYTORCH_MODEL_NAMES', 'get_model',
 ]
