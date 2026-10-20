@@ -16,7 +16,9 @@ jobs() {
   done
 }
 jobs | while read -r d p m v; do
-  [ -f "$OUT/${d}_${p}_${m}_${v}.json" ] || echo "$d $p $m $v"
+  [ -f "$OUT/${d}_${p}_${m}_${v}.json" ] && continue
+  pgrep -f "benchmark.py $d $p $m $v " >/dev/null && continue  # already running
+  echo "$d $p $m $v"
 done | xargs -P "$P" -L 1 sh -c \
   '.venv/bin/python scripts/benchmark.py $0 $1 $2 $3 --out '"$OUT"' > '"$OUT"'/logs/$0_$1_$2_$3.log 2>&1; echo "done $0 $1 $2 $3 rc=$?"'
 echo "suite finished"
