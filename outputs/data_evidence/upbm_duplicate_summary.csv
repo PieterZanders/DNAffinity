@@ -1,0 +1,11 @@
+statistic,value
+rows in Gata4_training.txt,5511.0
+unique sequences (exact),4954.0
+unique canonical sequences,4935.0
+rows that are exact duplicates,557.0
+canonical groups with >1 row,575.0
+rows in duplicated groups,1151.0
+median label (all),0.110681512700228
+median within-group range (dups),0.07160466580677857
+median within-group std (dups),0.03580233290338928
+groups with range > median label,186.0

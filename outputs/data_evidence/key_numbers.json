@@ -1,0 +1,176 @@
+{
+ "upbm_pairs": {
+  "all pairs": {
+   "n_pairs": 577,
+   "pearson": 0.42567662642886767,
+   "spearman": 0.48748657531294326,
+   "frac_identical_value": 0.0,
+   "median_abs_diff": 0.07160466580677857
+  },
+  "exact duplicates": {
+   "n_pairs": 558,
+   "pearson": 0.4284024864010199,
+   "spearman": 0.4928264932144683,
+   "frac_identical_value": 0.0,
+   "median_abs_diff": 0.07164087089167204
+  },
+  "RC pairs": {
+   "n_pairs": 19,
+   "pearson": -0.006057083402401054,
+   "spearman": 0.11228070175438597,
+   "frac_identical_value": 0.0,
+   "median_abs_diff": 0.0679571461804662
+  },
+  "non-identical values": {
+   "n_pairs": 577,
+   "pearson": 0.42567662642886767,
+   "spearman": 0.48748657531294326,
+   "frac_identical_value": 0.0,
+   "median_abs_diff": 0.07160466580677857
+  }
+ },
+ "upbm_labels": {
+  "n_distinct_values": 5510,
+  "n_values_repeated": 1,
+  "max_repeat": 2,
+  "rows_with_repeated_value": 2,
+  "skew": 1.494370340221324
+ },
+ "upbm_ceiling": {
+  "single_measurement_r": 0.42567662642886767,
+  "single_measurement_rho": 0.48748657531294326,
+  "mean_copies_per_seq": 1.1167173252279636,
+  "spearman_brown_reliability": 0.45286061079457973,
+  "ceiling_pearson": 0.6729491888653851,
+  "ceiling_spearman": 0.7176891697942533,
+  "n_pairs": 577
+ },
+ "selex_top10_kmers": [
+  {
+   "Kmer": "ACTTCCGGTC",
+   "ObservedCount": 810,
+   "Affinity": 1.0,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "GACTTCCGGT",
+   "ObservedCount": 487,
+   "Affinity": 0.992922756466374,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "TTCCGGCGGA",
+   "ObservedCount": 488,
+   "Affinity": 0.956703514048002,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "CACTTCCGGT",
+   "ObservedCount": 799,
+   "Affinity": 0.948144899134338,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "GGATATCCGG",
+   "ObservedCount": 371,
+   "Affinity": 0.937746148405487,
+   "ETS_CCGGAA": false,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "CTTCCGGCGG",
+   "ObservedCount": 439,
+   "Affinity": 0.931898906939729,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "GGACTTCCGG",
+   "ObservedCount": 395,
+   "Affinity": 0.93047130405593,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "ACTTCCGGCG",
+   "ObservedCount": 643,
+   "Affinity": 0.924016628832156,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "TCCGGCGGAA",
+   "ObservedCount": 564,
+   "Affinity": 0.922067483212131,
+   "ETS_CCGGAA": false,
+   "WGATAR": false
+  },
+  {
+   "Kmer": "ACTTCCGGTT",
+   "ObservedCount": 441,
+   "Affinity": 0.918232479136476,
+   "ETS_CCGGAA": true,
+   "WGATAR": false
+  }
+ ],
+ "selex_enrichment": {
+  "WGATAR": {
+   "background_frac": 0.00577299722011625,
+   "mean_affinity_with": 0.2243103107340729,
+   "mean_affinity_without": 0.23491309592890988,
+   "top100_frac": 0.0,
+   "top100_enrichment": 0.0,
+   "top1000_frac": 0.0,
+   "top1000_enrichment": 0.0
+  },
+  "GATA_core": {
+   "background_frac": 0.05287307303512762,
+   "mean_affinity_with": 0.23770108014048405,
+   "mean_affinity_without": 0.23469283068635874,
+   "top100_frac": 0.04,
+   "top100_enrichment": 0.7565287528005975,
+   "top1000_frac": 0.029,
+   "top1000_enrichment": 0.5484833457804332
+  },
+  "ETS_CCGGAA": {
+   "background_frac": 0.01855098559514784,
+   "mean_affinity_with": 0.42992015798080657,
+   "mean_affinity_without": 0.23116477788636444,
+   "top100_frac": 0.7,
+   "top100_enrichment": 37.7338441890166,
+   "top1000_frac": 0.459,
+   "top1000_enrichment": 24.742620689655173
+  },
+  "GGAA_core": {
+   "background_frac": 0.1550338008592368,
+   "mean_affinity_with": 0.2913570903818611,
+   "mean_affinity_without": 0.22448435114108903,
+   "top100_frac": 0.84,
+   "top100_enrichment": 5.418173297335846,
+   "top1000_frac": 0.747,
+   "top1000_enrichment": 4.818304110845092
+  }
+ },
+ "selex_logo": {
+  "top200_frac_TTCCGG": 0.68,
+  "top200_frac_WGATAR": 0.0
+ },
+ "selex_test_vs_upbm": {
+  "rows_selex_test": 5511,
+  "rows_upbm": 5511,
+  "shared_exact_sequences": 2521,
+  "frac_selex_test_seqs_in_upbm": 0.5076520338300443,
+  "frac_selex_test_seqs_in_selex_4txt": 0.0851792186870721,
+  "pearson_shared": 0.9622853083540234,
+  "frac_shared_identical_value": 0.8056326854422848,
+  "same_weight_column_values": true,
+  "median_selex_test": 0.110681512700228,
+  "median_upbm": 0.110681512700228,
+  "ks_stat": 0.00018145527127566563,
+  "ks_p": 1.0
+ }
+}

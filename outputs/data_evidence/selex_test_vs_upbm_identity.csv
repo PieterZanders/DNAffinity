@@ -1,0 +1,13 @@
+,value
+rows_selex_test,5511
+rows_upbm,5511
+shared_exact_sequences,2521
+frac_selex_test_seqs_in_upbm,0.5076520338300443
+frac_selex_test_seqs_in_selex_4txt,0.0851792186870721
+pearson_shared,0.9622853083540234
+frac_shared_identical_value,0.8056326854422848
+same_weight_column_values,True
+median_selex_test,0.110681512700228
+median_upbm,0.110681512700228
+ks_stat,0.00018145527127566563
+ks_p,1.0
