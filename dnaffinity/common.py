@@ -119,7 +119,6 @@ def train_model(df_train, args, chosen_features, pytorch_params, weighted=False,
                          chosen_features, args.score, selected_tetramers, weighted=weighted)
     model = Model(dset_train, len_aln, args.regressor, args.training_set_size,
                   weighted=weighted, pytorch_model_params=pytorch_params)
-    print(model)
 
     start_time = time.time()
     model.train()
