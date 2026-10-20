@@ -169,6 +169,9 @@ To add a new model, create a module implementing the `BaseRegressor` interface
 (`fit`, `predict`, optionally `feature_importances`) and register it in
 `dnaffinity/models/__init__.py`.
 
+Detailed layer-by-layer descriptions, hyperparameter tables and input-feature
+layouts for every model are in [docs/model_architectures.md](docs/model_architectures.md).
+
 ### PyTorch Model Configuration
 
 Every PyTorch model has its own config file in `configs/`, one per model:
