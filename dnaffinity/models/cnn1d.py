@@ -1,9 +1,8 @@
 """1D-CNN sequence model for local MD feature windows."""
 
-import torch
 import torch.nn as nn
 
-from dnaffinity.models.torch_base import TorchRegressor
+from dnaffinity.models.torch_base import WindowTorchRegressor
 
 
 class MLPHead(nn.Module):
@@ -99,10 +98,10 @@ class CNN1D(nn.Module):
         return self.head(pooled)
 
 
-class CNN1DRegressor(TorchRegressor):
+class CNN1DRegressor(WindowTorchRegressor):
+    """CNN1D wrapper using the shared training loop (see torch_base.TorchRegressor)."""
+
     architecture = 'CNN1D'
-    input_format = 'windows'
-    input_ndim = 3
 
     def _build_net(self, input_shape):
         kw = self.model_kwargs

@@ -12,69 +12,33 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 
 from dnaffinity.common import (OUTPUTS_DIR, ROOT, build_parser, default_params,
                                load_pytorch_params, save_model, train_model)
 from dnaffinity.plotting import save_plots
+from dnaffinity.preprocess import load_gcpbm
 
 parser = build_parser('gcPBM regressor for affinity prediction',
                       default_data_dir=ROOT / 'data' / 'gcpbm',
                       extra_args=[('--concentration', dict(type=str, required=True,
-                                                           help='Concentration label'))])
+                                                           help='Concentration label')),
+                                  ('--flank-threshold', dict(type=float, default=4.5,
+                                                             help='Max flank score vs the frequency matrix '
+                                                                  '(default 4.5 = discard >=5/6 E-box matches)'))])
 args = parser.parse_args()
 
 # ---------------------------------------------------------------------------
 # Preprocessing: normalize intensities and filter out probes with secondary
 # binding sites in the flanks
 # ---------------------------------------------------------------------------
-raw_data = pd.read_csv(f'{args.data_dir}/{args.protein}/{args.protein}_{args.concentration}.txt',
-                       sep='\t')
-proc_data = pd.concat([raw_data[["Sequence", "Intensity"]]])
-proc_data = proc_data.dropna()
-proc_data = proc_data.reset_index()
-strings = list(proc_data["Sequence"])
-strings = [seq[3:33] for seq in strings]
-values = proc_data["Intensity"]
-
-min_val = min(values)
-normalization = max(values) - min(values)
-values = list((values - min_val) / normalization)
-
-plt.plot(sorted(values))
-print(strings[0][12:18])
-
-freq_matrix = pd.read_csv(f'{args.data_dir}/{args.protein}/{args.protein}_freq_matrix_6.txt',
-                          sep=r'\s+')
-freq_matrix = np.array(freq_matrix)
-translate = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
-
-# flank positions to scan (outside the central binding site)
-l = list(np.arange(0, 12 - 5))
-for k in np.arange(18, 30 - 5):
-    l.append(k)
-
-discarded = []
-for s in np.arange(len(strings)):
-    string = strings[s]
-    scores = []
-    for i in l:
-        score = 0
-        for j in np.arange(0, len(freq_matrix)):
-            a = translate[string[i + j]]
-            score = score + freq_matrix[j][a]
-        scores.append(score)
-    if any(sc > 2.5 for sc in scores):
-        discarded.append(s)
-
-discarded = list(discarded)
-print('We have discarded', len(discarded) / len(strings) * 100, '% of the data')
-
-df_train = pd.DataFrame({'ID_REF': strings, 'VALUE': values})
-df_train = df_train.drop(discarded)
-df_train = df_train.reset_index(drop=True)
+data_file = f'{args.data_dir}/{args.protein}/{args.protein}_{args.concentration}.txt'
+fm_file = f'{args.data_dir}/{args.protein}/{args.protein}_freq_matrix_6.txt'
+if args.legacy_preprocessing:
+    # original behaviour: no replicate aggregation, flank threshold 2.5 (drops ~78%)
+    df_train = load_gcpbm(data_file, fm_file, flank_threshold=2.5, aggregate=False)
+else:
+    df_train = load_gcpbm(data_file, fm_file, flank_threshold=args.flank_threshold)
+print(f'{len(df_train)} probes kept after flank filtering / aggregation')
 
 # ---------------------------------------------------------------------------
 # Training

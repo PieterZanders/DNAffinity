@@ -6,5 +6,5 @@ from dnaffinity.models.base import SklearnRegressor
 
 
 class Ridge(SklearnRegressor):
-    def __init__(self, alpha=0.0001):
+    def __init__(self, alpha=1.0):
         self.model = SklearnRidge(alpha=alpha)

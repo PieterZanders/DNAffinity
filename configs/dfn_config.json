@@ -1,7 +1,16 @@
 {
-    "layers": [256, 128, 64, 32, 1],
-    "lr": 1e-4,
-    "normalization": true,
-    "num_epochs": 100,
-    "batch_size": 32
-  }
+  "layers": [
+    64,
+    32,
+    1
+  ],
+  "lr": 0.001,
+  "normalization": true,
+  "num_epochs": 200,
+  "batch_size": 64,
+  "weight_decay": 0.0001,
+  "patience": 20,
+  "scheduler": "plateau",
+  "warmup_epochs": 0,
+  "loss": "mse"
+}

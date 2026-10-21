@@ -15,10 +15,8 @@ class BaseRegressor:
         """Prepare the model for inputs of shape input_shape (excluding the sample axis)."""
 
     def fit(self, X, y, sample_weight=None, eval_set=None):
-        """
-        Train the model on features X and targets y (optionally sample-weighted).
-        eval_set=(X_val, y_val[, w_val]) is only used to monitor the loss.
-        """
+        """Train on X, y (optionally sample-weighted). eval_set=(X_val, y_val[, w_val]) is
+        used by neural models for early stopping and ignored by sklearn models."""
         raise NotImplementedError
 
     def predict(self, X):

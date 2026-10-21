@@ -5,7 +5,7 @@ import math
 import torch
 import torch.nn as nn
 
-from dnaffinity.models.torch_base import TorchRegressor
+from dnaffinity.models.torch_base import WindowTorchRegressor
 
 
 class MLPHead(nn.Module):
@@ -77,7 +77,8 @@ class Transformer(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers,
+                                             enable_nested_tensor=False)
         self.head = MLPHead(d_model, dropout=dropout)
 
     def forward(self, x, return_attention=False):
@@ -105,10 +106,10 @@ class Transformer(nn.Module):
         return self.head(pooled)
 
 
-class TransformerRegressor(TorchRegressor):
+class TransformerRegressor(WindowTorchRegressor):
+    """Transformer wrapper using the shared training loop (see torch_base.TorchRegressor)."""
+
     architecture = 'Transformer'
-    input_format = 'windows'
-    input_ndim = 3
 
     def _build_net(self, input_shape):
         kw = self.model_kwargs

@@ -208,7 +208,7 @@ If no config file is provided, default parameters are used. The config file can 
 Each script writes to `outputs/{method}/{protein}/{regressor}/` (gitignored), so different models for the same protein do not overwrite each other. Every run produces:
 - the trained model (`model.sav` for uPBM/SELEX, `model.pck` for gcPBM)
 - `predictions.png` — predicted vs ground-truth values for both the training and test split
-- `training_curve.png` — per-epoch training and validation (test split) loss, for PyTorch models
+- `training_curve.png` — per-epoch training and validation loss (validation split held out from training), for PyTorch models
 - `feature_importances.png` and `top_features.png` — for models that provide importances (random forest)
 - SELEX additionally keeps its intermediate training files next to the model
 

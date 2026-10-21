@@ -103,7 +103,7 @@ def plot_feature_importances(features, importances_sorted, save_dir=None):
 
 def plot_training_curve(history, save_path=None):
     """
-    Per-epoch training loss (and validation loss on the test split, if recorded).
+    Per-epoch training loss (and validation loss, if recorded).
 
     :param history: dict {'train': [...], 'val': [...] or None} (Model.history)
     :param save_path: optional path to save the figure as an image
@@ -115,7 +115,7 @@ def plot_training_curve(history, save_path=None):
     fig = plt.figure(figsize=(6, 4))
     plt.plot(epochs, history['train'], label='train')
     if history.get('val'):
-        plt.plot(epochs, history['val'], label='validation (test split)')
+        plt.plot(epochs, history['val'], label='validation')
     plt.xlabel('Epoch')
     plt.ylabel('MSE loss')
     plt.legend()

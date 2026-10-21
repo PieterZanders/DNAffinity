@@ -1,124 +1,163 @@
-"""Shared PyTorch training machinery for the neural regressors.
+"""Shared PyTorch training loop for all neural regressors.
 
-Subclasses only define how to build their network (_build_net) and the input
-rank they expect; mini-batch training with optional per-sample weighted MSE,
-tqdm progress, loss history, prediction and pickling live here.
+Features: seeded weight init and per-epoch shuffled mini-batches, AdamW with
+weight decay, optional linear warmup followed by ReduceLROnPlateau or cosine
+decay, MSE or Huber loss (optionally per-sample weighted), and early stopping
+on a validation set that restores the best weights.
 """
+
+import copy
+import math
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from tqdm.auto import tqdm
 
 from dnaffinity.models.base import BaseRegressor
 
-PREDICT_BATCH_SIZE = 1024
-
 
 class TorchRegressor(BaseRegressor):
-    architecture = None
-    # number of axes of X including the sample axis (2 = flat, 3 = windows)
-    input_ndim = 2
+    architecture = 'Torch'
+    input_format = 'flat'
 
     def __init__(self, lr=0.001, normalization=True, num_epochs=100, batch_size=32,
+                 weight_decay=1e-4, patience=15, warmup_epochs=0, scheduler='plateau',
+                 loss='mse', huber_delta=1.0, seed=0, verbose=False, progress=True,
                  **model_kwargs):
         self.lr = lr
         self.normalization = normalization
         self.num_epochs = num_epochs
         self.batch_size = batch_size
+        self.weight_decay = weight_decay
+        self.patience = patience
+        self.warmup_epochs = warmup_epochs
+        self.scheduler = scheduler
+        self.loss = loss
+        self.huber_delta = huber_delta
+        self.seed = seed
+        self.verbose = verbose
+        self.progress = progress
+        self.input_shape = None
         self.model_kwargs = dict(model_kwargs)
         self.model_kwargs.setdefault('normalization', normalization)
         self.net = None
-        self.input_shape = None
-        self.optimizer = None
-        self.criterion = nn.MSELoss()
         self.history = None
+        self.best_epoch = None
+        self.epochs_trained = 0
         self._device_str = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.device = torch.device(self._device_str)
+
+    # -- hooks -------------------------------------------------------------
+    def _check_input(self, X):
+        if X.ndim != 2:
+            raise ValueError(f"{self.architecture} expects X with shape (n_samples, n_features), got {X.shape}")
+        return X
 
     def _build_net(self, input_shape):
         """Return the nn.Module for inputs of shape input_shape (no sample axis)."""
         raise NotImplementedError
 
-    def _check_input(self, X):
-        X = np.asarray(X, dtype=np.float32)
-        if X.ndim != self.input_ndim:
-            expected = ('(n_samples, seq_len, feat_dim)' if self.input_ndim == 3
-                        else '(n_samples, n_features)')
-            raise ValueError(f"{self.architecture} expects X with shape {expected}, got {X.shape}")
-        return X
-
     def build(self, input_shape):
-        """(Re)initialise the network and optimizer for the given input shape."""
+        """(Re)initialise the network for the given input shape (seeded)."""
+        torch.manual_seed(self.seed)
         self.input_shape = tuple(input_shape)
         self.net = self._build_net(self.input_shape).to(self.device)
-        self.optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
         self.history = None
 
-    def _to_tensor(self, a):
-        return torch.tensor(np.asarray(a, dtype=np.float32), dtype=torch.float32).to(self.device)
-
-    def _loss(self, y_pred, y, w=None):
-        y_pred = y_pred.reshape(-1)
+    # -- training ----------------------------------------------------------
+    def _loss(self, pred, target, w=None):
+        if self.loss == 'huber':
+            per = nn.functional.huber_loss(pred, target, reduction='none', delta=self.huber_delta)
+        elif self.loss == 'mse':
+            per = (pred - target) ** 2
+        else:
+            raise ValueError("loss must be 'mse' or 'huber'")
         if w is not None:
-            return torch.mean(w * (y_pred - y) ** 2)
-        return self.criterion(y_pred, y)
+            return (w * per).sum() / w.sum()
+        return per.mean()
 
-    def _forward_batched(self, X):
-        return torch.cat([self.net(X[i:i + PREDICT_BATCH_SIZE])
-                          for i in range(0, len(X), PREDICT_BATCH_SIZE)])
+    def _to_tensors(self, X, y=None, w=None):
+        X = torch.tensor(self._check_input(np.asarray(X, dtype=np.float32)), device=self.device)
+        y = None if y is None else torch.tensor(np.asarray(y, dtype=np.float32).ravel(), device=self.device)
+        w = None if w is None else torch.tensor(np.asarray(w, dtype=np.float32).ravel(), device=self.device)
+        return X, y, w
+
+    def _lr_factor(self, epoch):
+        if self.warmup_epochs and epoch < self.warmup_epochs:
+            return (epoch + 1) / self.warmup_epochs
+        if self.scheduler == 'cosine':
+            t = (epoch - self.warmup_epochs) / max(1, self.num_epochs - self.warmup_epochs)
+            return 0.5 * (1 + math.cos(math.pi * min(1.0, t)))
+        return 1.0
 
     def fit(self, X, y, sample_weight=None, eval_set=None):
-        X = self._check_input(X)
-        if self.net is None or self.input_shape != X.shape[1:]:
-            self.build(X.shape[1:])
-
-        X_train, y_train = self._to_tensor(X), self._to_tensor(np.ravel(y))
-        w_train = self._to_tensor(sample_weight) if sample_weight is not None else None
-
-        val = None
+        X_t, y_t, w_t = self._to_tensors(X, y, sample_weight)
+        self.build(X_t.shape[1:])  # fresh, seeded weights on every fit
+        opt = torch.optim.AdamW(self.net.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        plateau = (torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=max(1, self.patience // 3))
+                   if self.scheduler == 'plateau' else None)
         if eval_set is not None:
-            X_val, y_val, *rest = eval_set
-            w_val = rest[0] if rest else None
-            val = (self._to_tensor(self._check_input(X_val)), self._to_tensor(np.ravel(y_val)),
-                   self._to_tensor(w_val) if w_val is not None else None)
-
-        self.history = {'train': [], 'val': [] if val is not None else None}
-        n = len(X_train)
+            Xv, yv, wv = (list(eval_set) + [None])[:3]
+            Xv, yv, wv = self._to_tensors(Xv, yv, wv)
+        gen = torch.Generator().manual_seed(self.seed)
+        best, best_state, bad = float('inf'), None, 0
+        self.history = {'train': [], 'val': [] if eval_set is not None else None}
+        n = len(X_t)
         progress = tqdm(range(self.num_epochs), desc=f'{self.architecture} [{self.device}]',
-                        unit='epoch')
-        for _ in progress:
+                        unit='epoch', disable=not self.progress)
+        for epoch in progress:
+            if plateau is None or (self.warmup_epochs and epoch < self.warmup_epochs):
+                for g in opt.param_groups:
+                    g['lr'] = self.lr * self._lr_factor(epoch)
             self.net.train()
-            total_loss, n_batches = 0.0, 0
+            perm = torch.randperm(n, generator=gen).to(self.device)
+            total = 0.0
             for i in range(0, n, self.batch_size):
-                end = min(i + self.batch_size, n)
-                self.optimizer.zero_grad()
-                loss = self._loss(self.net(X_train[i:end]), y_train[i:end],
-                                  w_train[i:end] if w_train is not None else None)
+                idx = perm[i:i + self.batch_size]
+                if len(idx) < 2:  # BatchNorm cannot train on a single sample
+                    continue
+                opt.zero_grad()
+                pred = self.net(X_t[idx]).reshape(-1)
+                loss = self._loss(pred, y_t[idx], None if w_t is None else w_t[idx])
                 loss.backward()
-                self.optimizer.step()
-                total_loss += loss.item()
-                n_batches += 1
-
-            train_loss = total_loss / n_batches
+                nn.utils.clip_grad_norm_(self.net.parameters(), 5.0)
+                opt.step()
+                total += loss.item() * len(idx)
+            train_loss = total / n
             self.history['train'].append(train_loss)
-            postfix = {'loss': f'{train_loss:.5f}'}
-            if val is not None:
+            if eval_set is not None:
                 self.net.eval()
                 with torch.no_grad():
-                    val_loss = self._loss(self._forward_batched(val[0]), val[1], val[2]).item()
-                self.history['val'].append(val_loss)
-                postfix['val_loss'] = f'{val_loss:.5f}'
-            progress.set_postfix(postfix)
+                    vloss = self._loss(self._predict_tensor(Xv), yv, wv).item()
+                self.history['val'].append(vloss)
+                progress.set_postfix(loss=f'{train_loss:.4f}', val_loss=f'{vloss:.4f}')
+                if plateau is not None and epoch >= self.warmup_epochs:
+                    plateau.step(vloss)
+                if vloss < best - 1e-6:
+                    best, bad, self.best_epoch = vloss, 0, epoch
+                    best_state = copy.deepcopy(self.net.state_dict())
+                else:
+                    bad += 1
+                    if bad >= self.patience:
+                        break
+            else:
+                progress.set_postfix(loss=f'{train_loss:.4f}')
+        if best_state is not None:
+            self.net.load_state_dict(best_state)
+        self.epochs_trained = len(self.history['train'])
+        return self
+
+    def _predict_tensor(self, X_t, chunk=4096):
+        return torch.cat([self.net(X_t[i:i + chunk]).reshape(-1) for i in range(0, len(X_t), chunk)])
 
     def predict(self, X):
         if self.net is None:
             raise RuntimeError(f"{self.architecture} has not been trained yet; call fit() first")
-        X = self._to_tensor(self._check_input(X))
+        X_t, _, _ = self._to_tensors(X)
         self.net.eval()
         with torch.no_grad():
-            return self._forward_batched(X).cpu().numpy()
+            return self._predict_tensor(X_t).cpu().numpy().reshape(-1, 1)
 
     def state_dict(self):
         return self.net.state_dict() if self.net is not None else None
@@ -130,7 +169,7 @@ class TorchRegressor(BaseRegressor):
 
     def __repr__(self):
         hparams = {'lr': self.lr, 'num_epochs': self.num_epochs, 'batch_size': self.batch_size,
-                   **self.model_kwargs}
+                   'weight_decay': self.weight_decay, 'loss': self.loss, **self.model_kwargs}
         header = f"{self.architecture}({', '.join(f'{k}={v}' for k, v in hparams.items())})"
         if self.net is None:
             return f"{header}\n  network not built yet (built from the input shape)"
@@ -138,23 +177,25 @@ class TorchRegressor(BaseRegressor):
                 f"  trainable parameters: {self.n_parameters():,}\n{self.net}")
 
     def __getstate__(self):
-        """Exclude non-pickleable PyTorch objects."""
         state = self.__dict__.copy()
-        state.pop('optimizer', None)
-        state.pop('criterion', None)
         state.pop('device', None)
         return state
 
     def __setstate__(self, state):
-        """Restore state after unpickling - recreate PyTorch objects."""
         state.setdefault('input_shape', None)
         state.setdefault('history', None)
         state.setdefault('model_kwargs', {})
         self.__dict__.update(state)
-        self.device = torch.device(self._device_str if torch.cuda.is_available()
-                                   or self._device_str == 'cpu' else 'cpu')
-        self.criterion = nn.MSELoss()
-        self.optimizer = None
+        self.device = torch.device('cpu')
         if self.net is not None:
             self.net.to(self.device)
-            self.optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
+
+
+class WindowTorchRegressor(TorchRegressor):
+    input_format = 'windows'
+
+    def _check_input(self, X):
+        if X.ndim != 3:
+            raise ValueError(
+                f"{self.architecture} expects X with shape (n_samples, seq_len, feat_dim), got {X.shape}")
+        return X

@@ -17,12 +17,18 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS_DIR = ROOT / 'outputs'
 
 # Default DFN hyperparameters (uPBM / gcPBM)
+# Training-loop settings shared by all PyTorch models (early stopping on the
+# validation split, AdamW weight decay, ReduceLROnPlateau)
+TRAINING_DEFAULTS = {
+    'num_epochs': 200, 'batch_size': 64, 'weight_decay': 1e-4, 'patience': 20,
+    'scheduler': 'plateau', 'warmup_epochs': 0, 'loss': 'mse',
+}
+
 DEFAULT_DFN_PARAMS = {
     'layers': [64, 32, 1],  # [hidden1, hidden2, ..., output]
     'lr': 0.001,
     'normalization': True,
-    'num_epochs': 100,
-    'batch_size': 32,
+    **TRAINING_DEFAULTS,
 }
 
 # SELEX uses a deeper network with a smaller learning rate and batch size
@@ -30,26 +36,27 @@ SELEX_DFN_PARAMS = {
     'layers': [256, 128, 64, 32, 1],
     'lr': 1e-4,
     'normalization': True,
-    'num_epochs': 100,
-    'batch_size': 16,
+    **TRAINING_DEFAULTS,
 }
 
 # Default hyperparameters per PyTorch model; mirrored by configs/{model}_config.json
 DEFAULT_MODEL_PARAMS = {
     'DFN': DEFAULT_DFN_PARAMS,
     'CNN1D': {
-        'lr': 0.001, 'normalization': True, 'num_epochs': 100, 'batch_size': 32,
+        'lr': 0.001, 'normalization': True, **TRAINING_DEFAULTS,
         'dropout': 0.1, 'hidden_dim': 64, 'num_blocks': 2, 'kernel_size': 3, 'pool': 'avg',
     },
     'CNNAttention': {
-        'lr': 0.001, 'normalization': True, 'num_epochs': 100, 'batch_size': 32,
+        'lr': 0.001, 'normalization': True, **TRAINING_DEFAULTS,
         'dropout': 0.1, 'hidden_dim': 64, 'num_blocks': 2, 'kernel_size': 3, 'pool': 'avg',
         'num_heads': 4, 'num_attn_layers': 1,
     },
     'Transformer': {
-        'lr': 0.001, 'normalization': True, 'num_epochs': 100, 'batch_size': 32,
-        'dropout': 0.1, 'd_model': 64, 'num_layers': 2, 'nhead': 4, 'dim_feedforward': 128,
-        'pos_encoding': 'sinusoidal', 'pooling': 'cls',
+        # lower LR + warmup and mean pooling: the original (lr 1e-3, CLS pooling)
+        # collapsed to a constant prediction on SELEX and gcPBM
+        'lr': 3e-4, 'normalization': True, **TRAINING_DEFAULTS, 'warmup_epochs': 5,
+        'dropout': 0.1, 'd_model': 32, 'num_layers': 2, 'nhead': 4, 'dim_feedforward': 64,
+        'pos_encoding': 'sinusoidal', 'pooling': 'mean',
     },
 }
 
@@ -87,7 +94,25 @@ def build_parser(description, default_data_dir, extra_args=()):
                         help='Model target (default: octamers)')
     parser.add_argument('--config', type=str, default=None,
                         help='Path to JSON file with PyTorch model parameters')
+    parser.add_argument('--seed', type=int, default=0, help='Random seed for splits and training')
+    parser.add_argument('--cv', type=int, default=0,
+                        help='If >1, run k-fold group cross-validation instead of a single split')
+    parser.add_argument('--target-transform', type=str, default=None, choices=[None, 'log'],
+                        help='Optional target transform (fitted on the training split)')
+    parser.add_argument('--rc-average', action='store_true',
+                        help='Average predictions over both strands of each sequence')
+    parser.add_argument('--onehot', action='store_true',
+                        help='Add one-hot sequence features (per-window for CNN/attention/transformer)')
+    parser.add_argument('--legacy-preprocessing', action='store_true',
+                        help='Use the original (pre-audit) preprocessing for comparison')
     return parser
+
+
+def add_onehot(chosen_features, regressor):
+    """Append the matching one-hot sequence feature for a regressor."""
+    from dnaffinity.models import get_model
+    fmt = get_model(regressor).input_format
+    return list(chosen_features) + (['onehot_window'] if fmt == 'windows' else ['onehot_1mer'])
 
 
 def load_pytorch_params(config_path, defaults=DEFAULT_DFN_PARAMS):
@@ -109,25 +134,37 @@ def load_pytorch_params(config_path, defaults=DEFAULT_DFN_PARAMS):
 def train_model(df_train, args, chosen_features, pytorch_params, weighted=False, label='the'):
     """
     Build a Dataset from df_train (ID_REF/VALUE columns), train a Model
-    according to the CLI args, report timing and r2, and return the model.
+    according to the CLI args (group split on canonical sequences, train-only
+    scaling), report timing and test metrics, and return the model. With
+    --cv k, k-fold group cross-validation is run first and summarized.
     """
+    from dnaffinity.model import cross_validate
+    if getattr(args, 'onehot', False):
+        chosen_features = add_onehot(chosen_features, args.regressor)
     strings = list(df_train['ID_REF'])
     len_aln = len(strings[0])
     selected_tetramers = list(range(len_aln - 3))
 
+    start_time = time.time()
     dset_train = Dataset(args.protein, df_train, args.model_target, args.randomize_fce,
                          chosen_features, args.score, selected_tetramers, weighted=weighted)
-    model = Model(dset_train, len_aln, args.regressor, args.training_set_size,
-                  weighted=weighted, pytorch_model_params=pytorch_params)
-
+    model_kwargs = dict(weighted=weighted, pytorch_model_params=pytorch_params,
+                        target_transform=getattr(args, 'target_transform', None),
+                        rc_average=getattr(args, 'rc_average', False))
+    seed = getattr(args, 'seed', 0)
+    if getattr(args, 'cv', 0) and args.cv > 1:
+        cv = cross_validate(dset_train, len_aln, args.regressor, n_folds=args.cv, seed=seed, **model_kwargs)
+        summ = cv[['pearson', 'spearman', 'r2', 'rmse']].agg(['mean', 'std'])
+        print(f'{args.cv}-fold CV summary:\n{summ.round(4)}')
+    model = Model(dset_train, len_aln, args.regressor, args.training_set_size, seed=seed, **model_kwargs)
+    print(model)
     start_time = time.time()
     model.train()
     print(f'{label} model has been trained')
     print("It took %s seconds" % (time.time() - start_time))
 
-    model.predict()
-    print(model.y_test.shape, model.y_pred.shape)
-    print('The r2 is ', model.r2)
+    metrics = model.predict()
+    print('Test metrics (per unique sequence):', {k: round(v, 4) for k, v in metrics.items()})
     return model
 
 

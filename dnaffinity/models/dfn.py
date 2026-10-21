@@ -1,7 +1,8 @@
 """Deep feedforward network (DFN) regressor implemented in PyTorch.
 
 Contains the network definitions (FeedForward, RegressionCV) and the DFN
-wrapper that plugs them into the shared TorchRegressor training loop.
+wrapper that exposes the common fit/predict interface, including mini-batch
+training with optional per-sample weighted MSE loss.
 """
 
 import torch.nn as nn
@@ -74,6 +75,8 @@ class RegressionCV(nn.Module):
         else:
             self.norm_in = None
 
+        self.loss_fn = nn.MSELoss()
+
     def forward(self, x):
         """Forward pass."""
         if self.norm_in is not None:
@@ -82,18 +85,18 @@ class RegressionCV(nn.Module):
 
 
 class DFN(TorchRegressor):
-    """PyTorch feedforward regressor with mini-batch (optionally weighted) MSE training."""
+    """PyTorch feedforward regressor using the shared training loop."""
 
     architecture = 'DFN'
-    input_ndim = 2
 
-    def __init__(self, layers=None, lr=0.001, normalization=True, num_epochs=100, batch_size=32,
-                 **_ignored):
-        super().__init__(lr=lr, normalization=normalization, num_epochs=num_epochs,
-                         batch_size=batch_size,
-                         layers=list(layers) if layers is not None else [64, 32, 1])
-        self.layers = self.model_kwargs['layers']
+    def __init__(self, layers=None, dropout=0.0, **kwargs):
+        super().__init__(**kwargs)
+        self.layers = list(layers) if layers is not None else [64, 32, 1]
+        self.dropout = dropout
+        self.model_kwargs['layers'] = self.layers
 
     def _build_net(self, input_shape):
-        return RegressionCV(model=self.layers, in_features=input_shape[-1],
-                            normalization=self.normalization)
+        in_features = input_shape[-1]
+        net = FeedForward([in_features] + self.layers, dropout=self.dropout)
+        return RegressionCV(net, in_features=in_features,
+                            normalization=self.model_kwargs.get('normalization', True))
