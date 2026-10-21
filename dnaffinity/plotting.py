@@ -126,6 +126,47 @@ def plot_training_curve(history, save_path=None):
         plt.show()
 
 
+def plot_relevance(relevance, feature_names=None, top=15, save_path=None):
+    """
+    Visualize LRP relevance (dnaffinity.utils.lrp.lrp_relevance), averaged as
+    mean |relevance| over samples.
+
+    2D input (n_samples, n_features) -> horizontal bar chart of the `top` features.
+    3D input (n_samples, seq_len, feat_dim) -> heatmap of windows x feature dims.
+
+    :param relevance: relevance array from lrp_relevance
+    :param feature_names: optional names (n_features, or feat_dim for 3D input)
+    :param top: number of features shown in the bar chart (2D input only)
+    :param save_path: optional path to save the figure as an image
+    :return: pd.Series (2D input) or pd.DataFrame (3D input) of mean |relevance|
+    """
+    rel = np.abs(np.asarray(relevance)).mean(axis=0)
+
+    if rel.ndim == 1:
+        names = feature_names if feature_names is not None else range(len(rel))
+        series = pd.Series(rel, index=list(names)).sort_values(ascending=False)
+        fig = plt.figure(figsize=(7, 5))
+        series.head(top).sort_values().plot.barh()
+        plt.xlabel('mean |relevance|')
+        result = series
+    else:
+        names = feature_names if feature_names is not None else range(rel.shape[1])
+        df = pd.DataFrame(rel, columns=list(names))  # rows: windows, cols: feature dims
+        fig = plt.figure(figsize=(8, 4))
+        plt.imshow(df.T.values, aspect='auto', cmap='viridis')
+        plt.colorbar(label='mean |relevance|')
+        plt.xlabel('tetramer window')
+        plt.yticks(range(len(df.columns)), df.columns)
+        result = df
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+    else:
+        plt.show()
+    return result
+
+
 def save_plots(model, out_dir):
     """
     Save all available plots for a trained Model into out_dir:

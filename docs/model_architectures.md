@@ -216,6 +216,21 @@ Config: `configs/transformer_config.json`.
 
 ---
 
+## Interpretability
+
+- **`random_forest`** exposes `feature_importances()`, rendered by the pipelines as a
+  pie/bar chart.
+- **`CNNAttention`** keeps its last attention weights (`net.last_attention`, or
+  `forward(x, return_attention=True)`).
+- **`DFN` and `CNN1D`** support layer-wise relevance propagation
+  (`dnaffinity/utils/lrp.py`): `lrp_relevance(model)` redistributes each prediction onto
+  the input features with the ε-rule, returning `(n, n_features)` for DFN and
+  `(n, seq_len, feat_dim)` for CNN1D. `plotting.plot_relevance` renders the result as a
+  top-features bar chart or a window×feature heatmap. ReLU/Dropout pass relevance
+  through, residual connections split it proportionally, pooling distributes it over
+  windows, and the input LayerNorm is treated as a pass-through; biases absorb part of
+  the relevance, so per-sample sums only approximately equal the prediction.
+
 ## Choosing a model
 
 - `random_forest` is the fast baseline and the only model with feature importances.
