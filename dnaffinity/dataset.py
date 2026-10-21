@@ -92,7 +92,7 @@ class Dataset:
             self.mgw = np.array([np.concatenate([self.mgw[otmer[i:i+4]] for i in self.selected_tetramers])
                                  for otmer in self.sequences])
         if 'electrostatic' in self.feats:
-            self.electrostatic = {line.split()[0]: [x for x in line.split()[1:]]
+            self.electrostatic = {line.split()[0]: [float(x) for x in line.split()[1:]]
                                   for line in open(DATA_DIR / 'electrostatic.txt') if 'SHIFT' not in line}
             self.electrostatic = np.array([np.concatenate([self.electrostatic[otmer[i:i+4]]
                                                            for i in self.selected_tetramers])
