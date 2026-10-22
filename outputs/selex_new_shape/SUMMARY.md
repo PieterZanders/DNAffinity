@@ -47,3 +47,19 @@ Overfitting:
 - CNN1D: the val curve plateaus at about epoch 10–30 (best ≈27) while train MSE keeps falling to 0.07. It overfits after the plateau; early stopping restores the best epoch. Val and test agree (0.735 vs 0.736), so there is no leakage.
 
 Plots: plots/{rf,dfn,cnn1d}_truth_vs_pred.png, plots/{dfn,cnn1d}_learning_curves.png
+
+## Update: all models (same preprocessing, test set and folds)
+| model | runs | train R² | val R² | test R² | test Pearson | test Spearman | gap | test ensemble R² |
+|---|---|---|---|---|---|---|---|---|
+| Linear | 5 | 0.502±0.002 | 0.480±0.010 | 0.471±0.001 | 0.687 | 0.692 | 0.031 | 0.473 |
+| Ridge | 5 | 0.500±0.002 | 0.480±0.010 | 0.470±0.001 | 0.686 | 0.692 | 0.030 | 0.472 |
+| SVR | 5 | 0.743±0.002 | 0.624±0.007 | 0.598±0.006 | 0.774 | 0.767 | 0.146 | 0.606 |
+| RF | 5 | 0.884±0.001 | 0.599±0.015 | 0.572±0.004 | 0.762 | 0.744 | 0.311 | 0.581 |
+| LightGBM | 5 | 0.848±0.014 | 0.664±0.014 | 0.644±0.008 | 0.803 | 0.788 | 0.205 | 0.657 |
+| DFN | 15 | 0.820±0.026 | 0.660±0.011 | 0.644±0.011 | 0.803 | 0.791 | 0.176 | 0.673 |
+| CNN1D | 15 | 0.889±0.032 | 0.735±0.015 | 0.736±0.012 | 0.860 | 0.844 | 0.153 | 0.788 |
+| CNNAttention | 15 | 0.880±0.029 | 0.728±0.019 | 0.725±0.016 | 0.853 | 0.837 | 0.155 | 0.778 |
+| Transformer | 15 | 0.761±0.018 | 0.705±0.015 | 0.685±0.009 | 0.828 | 0.813 | 0.077 | 0.709 |
+| Ensemble all NNs | 4 | – | – | 0.756 | 0.871 | 0.860 | – | 0.756 |
+| Ensemble CNN1D+CNNAttn | 2 | – | – | 0.785 | 0.887 | 0.874 | – | 0.785 |
+Report: report/SELEX_shape_report.pdf

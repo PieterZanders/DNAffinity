@@ -1,0 +1,146 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{graphicx,booktabs,amsmath,caption,subcaption,hyperref,float}
+\graphicspath{{../plots/}}
+\title{Predicting Gata4 HT-SELEX affinities from MD-derived DNA shape:\\ preprocessing and model comparison with new tetramer/hexamer shape tables}
+\author{Pieter Zanders}
+\date{22 October 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+We characterise newly generated tetramer and hexamer DNA-shape tables (average helical parameters and stiffness matrices) and use them to predict Gata4 HT-SELEX 10-mer affinities. All labels come from the SELEX affinity table (\texttt{4.txt}), in which affinity is exactly $0.172\,(\mathrm{obs}/\mathrm{exp})^{1/4}$, only 12.1\% of 10-mers are present and 52.5\% of entries have a single count. We ran a preprocessing ablation under a leakage-free validation scheme (5-fold cross-validation grouping each $k$-mer with its reverse complement, plus a fixed 10\% held-out test set). Four choices worked best: log-affinity labels, a count threshold of $\geq$10, per-strand labels (no averaging of the two orientations) and tetramer shape features plus per-window one-hot encoding with standardisation. Per-strand labels were much better than merged labels, gaining 0.15--0.17 in CV $R^2$. Hexamer features did not help. Under the same protocol we compared nine regressors and two neural-network ensembles. CNN1D was the best single model (held-out test $R^2=0.736\pm0.012$, Pearson 0.860, Spearman 0.844; 0.788 for the averaged prediction of its 15 runs). It was followed by CNNAttention (0.725), the Transformer (0.685), DFN and LightGBM (both 0.644), SVR (0.598), random forest (0.572) and linear/ridge regression (0.47). An ensemble of CNN1D and CNNAttention reached 0.785 and an ensemble of all four NNs 0.756. The shape features improved tree models but added nothing to the CNN beyond one-hot encoding. The supplied \texttt{SELEX\_test.txt} is not consistent with \texttt{4.txt} and was not used for evaluation.
+\end{abstract}
+
+\section{Introduction}
+Transcription factors (TFs) recognise their genomic targets through direct base readout and through the sequence-dependent three-dimensional shape of DNA (``shape readout'') \cite{rohs2009}. High-throughput SELEX (HT-SELEX) enriches DNA ligands bound by a TF over successive selection rounds and sequences them, giving large-scale relative affinities for $k$-mers \cite{jolma2013}. Physics-based descriptors from atomistic molecular dynamics (MD) summarise the local structure and flexibility of DNA. Examples are average base-step helical parameters (shift, slide, rise, tilt, roll, twist) and stiffness (force-constant) matrices. Such descriptors can complement or replace the raw sequence as model input, and they give an interpretable view of affinity determinants. DNAffinity builds regressors on such features. Here we test new tetramer- and hexamer-level shape tables on Gata4 HT-SELEX data and ask (i) which preprocessing is optimal and (ii) how classical and deep models compare.
+
+\section{Methods}
+\subsection{Affinity labels}
+Labels are taken from the SELEX package output for Gata4 (\texttt{data/selex/Gata4/4.txt}). It has 126{,}624 10-mers with observed and expected (Markov-model) counts, affinity and SE. We verified that $\mathrm{Affinity}=0.172\,(\mathrm{obs}/\mathrm{exp})^{0.25}$ to machine precision (sd of the ratio $2.5\times10^{-16}$) and that $\mathrm{SE}\sqrt{n}/\mathrm{Aff}$ has median $1.414\approx\sqrt2$. The table is zero-truncated: only 12.1\% of the $4^{10}$ possible 10-mers appear. 52.5\% of entries have count 1, and 13{,}100 have count $\geq$10. Because the SE is about $\sqrt2\,\mathrm{Aff}/\sqrt n$, labels with low counts are very noisy.
+
+\subsection{Shape features}
+The new tables \texttt{data/selex/tetramer/\{avg,fce\}\_tetramer.dat} and \texttt{data/selex/hexamer/\{avg,fce\}\_hexamer.dat} give, for every tetramer (256) and hexamer (4096), six average helical parameters (\texttt{avg}) and a flattened $6\times6$ stiffness matrix (\texttt{fce}). The matrices are exactly symmetric and positive definite (minimum eigenvalue $\approx 0.006$), so we keep the 21 unique upper-triangle entries. A 10-mer is represented by 7 overlapping tetramer windows (and 5 hexamer windows). Hexamer $j$ is aligned to its central tetramer window $j{+}1$ and zero-padded at the ends for windowed models. Optional one-hot input adds the 16 one-hot values of the bases in each tetramer window. Flat models use the concatenated windows; windowed models (CNN1D, CNNAttention, Transformer) use a $7\times d$ tensor.
+
+\subsection{Validation protocol}
+Every $k$-mer is grouped with its reverse complement. A fixed random 10\% of groups (seed 20, drawn over all groups in \texttt{4.txt}) forms the held-out test set. The remaining pool is split by \texttt{GroupKFold} into 5 folds. Inside each training fold, neural networks and LightGBM hold out a random 10\% for early stopping. For every fold model we report train-fold, validation-fold and test metrics. Metrics are $R^2$, Pearson and Spearman correlations on log affinity, given as mean$\pm$sd over folds (and seeds), plus the train--test $R^2$ gap. The ``averaged-runs'' test $R^2$ is the $R^2$ of the mean prediction of all fold/seed models of one type.
+
+\subsection{Preprocessing ablation}
+Starting from a base configuration (log label, count $\geq$10, per-strand labels, tetramer avg+fce, standardisation), we changed one factor at a time and scored a random forest (300 trees, min leaf 3, max features 0.33) and a CNN1D (one seed). The factors were: label transform (raw vs log), count threshold (1, 3, 10, 30), merged vs per-strand labels, feature tables (tetramer, hexamer, both), \texttt{avg}/\texttt{fce}/both, one-hot $\pm$ shape, and standardisation. Merged labels average the measured strands per canonical $k$-mer and emit both orientations (reverse-complement augmentation). Per-strand labels keep each measured orientation as its own row. To make configurations comparable, every one was scored on the same rows: held-out-fold rows with a measured per-strand label and count $\geq$10. The CNN was not run at thresholds 1 and 3 because of CPU cost.
+
+\subsection{Models}
+\begin{itemize}
+\item Linear regression, ridge ($\alpha=10$) and RBF SVR, using the DNAffinity wrappers.
+\item Random forest (500 trees, min leaf 3, max features 0.33).
+\item LightGBM (learning rate 0.03, 31 leaves, row/column subsampling 0.8/0.5, early stopping with patience 100).
+\item The DNAffinity PyTorch models, all trained with AdamW (weight decay $10^{-2}$), dropout 0.2, batch size 64, at most 300 epochs, ReduceLROnPlateau and early stopping (patience 25, best weights restored), with 3 seeds per fold:
+  \begin{itemize}
+  \item DFN (256--128--64, learning rate $3\times10^{-4}$);
+  \item CNN1D (64 channels, two residual blocks, kernel 3);
+  \item CNNAttention (same backbone plus one 4-head attention layer);
+  \item Transformer ($d_\mathrm{model}=32$, 2 layers, 4 heads, mean pooling, 5 warm-up epochs, learning rate $3\times10^{-4}$).
+  \end{itemize}
+\end{itemize}
+Targets were standardised on the training fold. Ensembles average the averaged-runs predictions of all four NNs, or of CNN1D and CNNAttention only.
+
+\section{Results}
+\subsection{Characterisation of the new shape tables}
+The tables are complete (all $k$-mers, no missing values). The \texttt{avg} files are tab-separated with a \texttt{SEQUENCE} header, and the \texttt{fce} files are space-separated. Reverse-complement symmetry holds: correlation $\geq0.998$ between a $k$-mer and its reverse complement, with shift and tilt sign-flipped. The new tetramer values differ from the earlier \texttt{data/input} tables. Correlations per average parameter are 0.83 (shift), 0.97, 0.96, 0.85 (tilt), 0.98 and 0.94, and 0.90--0.97 for the stiffness diagonal. Hexamer averages correlate 0.96--0.99 with those of their central tetramer, so they are largely redundant. In \texttt{4.txt}, log affinities of the forward and reverse-complement orientations of the same 10-mer correlate only $r=0.417$ (17{,}376 pairs). The correlation stays at 0.412 and 0.425 when both counts are $\geq$10 or $\geq$30, so the asymmetry is not explained by counting noise.
+
+\subsection{Preprocessing ablation}
+\begin{table}[H]\centering\small
+\caption{Preprocessing ablation: 5-fold grouped CV $R^2$ on log affinity, evaluated on per-strand count$\geq$10 rows (mean$\pm$sd over folds where given). Base: log, count$\geq$10, per-strand, tetramer avg+fce, standardised.}
+\begin{tabular}{lcc}\toprule
+Change vs.\ base & RF & CNN1D \\\midrule
+Base & 0.588$\pm$0.015 & 0.692$\pm$0.018\\
+Raw label & 0.579 & 0.691\\
+Count $\geq$1 / $\geq$3 / $\geq$30 & $-1.449$ / 0.044 / $-0.227$ & -- / -- / 0.158\\
+Merged labels + RC augmentation & 0.438 & 0.520\\
+Hexamer only / tetramer+hexamer & 0.546 / 0.579 & 0.578 / 0.672\\
+avg only / fce only & 0.560 / 0.586 & 0.661 / 0.680\\
+No standardisation & 0.588 & 0.653\\
++ one-hot & \textbf{0.599$\pm$0.014} & 0.738$\pm$0.022\\
+One-hot only (no shape) & 0.563 & \textbf{0.739$\pm$0.018}\\
++ one-hot, tetramer+hexamer & 0.589 & 0.721\\\bottomrule
+\end{tabular}\label{tab:abl}\end{table}
+The low and high count thresholds give strongly negative or near-zero $R^2$. Their Pearson correlations stay at 0.67--0.76, so the loss comes mainly from biased predicted levels: low-count labels shrink predictions, and a threshold of 30 removes low-affinity training examples. Per-strand labels beat merged labels by 0.15--0.17. The chosen configuration is log label, count $\geq$10, per-strand, tetramer avg+fce plus one-hot, standardised.
+
+\subsection{Model comparison}
+\begin{table}[H]\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\caption{All models with the chosen preprocessing. $R^2$/Pearson/Spearman on log affinity, mean$\pm$sd over 5 folds ($\times$3 seeds for NNs). Gap = train $-$ test $R^2$. Avg-runs = $R^2$ of the averaged prediction of all runs on the held-out test set.}
+\begin{tabular}{lcccccccc}\toprule
+Model & Runs & Train $R^2$ & Val $R^2$ & Test $R^2$ & Test Pearson & Test Spearman & Gap & Avg-runs $R^2$\\\midrule
+Linear & 5 & 0.502$\pm$0.002 & 0.480$\pm$0.010 & 0.471$\pm$0.001 & 0.687$\pm$0.001 & 0.692$\pm$0.001 & 0.031$\pm$0.003 & 0.473 \\
+Ridge & 5 & 0.500$\pm$0.002 & 0.480$\pm$0.010 & 0.470$\pm$0.001 & 0.686$\pm$0.001 & 0.692$\pm$0.001 & 0.030$\pm$0.003 & 0.472 \\
+SVR (RBF) & 5 & 0.743$\pm$0.002 & 0.624$\pm$0.007 & 0.598$\pm$0.006 & 0.774$\pm$0.004 & 0.767$\pm$0.004 & 0.146$\pm$0.005 & 0.606 \\
+Random forest & 5 & 0.884$\pm$0.001 & 0.599$\pm$0.015 & 0.572$\pm$0.004 & 0.762$\pm$0.003 & 0.744$\pm$0.003 & 0.311$\pm$0.003 & 0.581 \\
+LightGBM & 5 & 0.848$\pm$0.014 & 0.664$\pm$0.014 & 0.644$\pm$0.008 & 0.803$\pm$0.005 & 0.788$\pm$0.006 & 0.205$\pm$0.007 & 0.657 \\
+DFN & 15 & 0.820$\pm$0.026 & 0.660$\pm$0.011 & 0.644$\pm$0.011 & 0.803$\pm$0.007 & 0.791$\pm$0.008 & 0.176$\pm$0.020 & 0.673 \\
+CNN1D & 15 & 0.889$\pm$0.032 & 0.735$\pm$0.015 & 0.736$\pm$0.012 & 0.860$\pm$0.006 & 0.844$\pm$0.007 & 0.153$\pm$0.022 & 0.788 \\
+CNNAttention & 15 & 0.880$\pm$0.029 & 0.728$\pm$0.019 & 0.725$\pm$0.016 & 0.853$\pm$0.009 & 0.837$\pm$0.010 & 0.155$\pm$0.017 & 0.778 \\
+Transformer & 15 & 0.761$\pm$0.018 & 0.705$\pm$0.015 & 0.685$\pm$0.009 & 0.828$\pm$0.006 & 0.813$\pm$0.006 & 0.077$\pm$0.010 & 0.709 \\
+Ensemble (all NNs) & 4 & -- & -- & 0.756 & 0.871 & 0.860 & -- & 0.756 \\
+Ensemble (CNN1D+CNNAttn) & 2 & -- & -- & 0.785 & 0.887 & 0.874 & -- & 0.785 \\
+\bottomrule\end{tabular}\label{tab:models}\end{table}
+
+\begin{figure}[H]\centering\includegraphics[width=.85\textwidth]{model_comparison.png}
+\caption{Held-out test $R^2$ per model: mean$\pm$sd over runs, and the $R^2$ of the averaged prediction.}\label{fig:bar}\end{figure}
+
+\begin{table}[H]\centering\small
+\caption{Training dynamics of the neural networks (means over runs; MSE on standardised log affinity).}
+\begin{tabular}{lcccc}\toprule
+Model & Best epoch & Epochs run & Final train MSE & Best val MSE\\\midrule
+DFN & 44.3 & 70.3 & 0.186 & 0.331 \\
+CNN1D & 27.1 & 53.1 & 0.068 & 0.261 \\
+CNNAttention & 21.6 & 47.6 & 0.055 & 0.266 \\
+Transformer & 111.6 & 137.6 & 0.293 & 0.291 \\
+\bottomrule\end{tabular}\label{tab:curves}\end{table}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.49\textwidth]{linear_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{ridge_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{svr_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{rf_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{lightgbm_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{dfn_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{cnn1d_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{cnnattention_truth_vs_pred.png}
+\includegraphics[width=.49\textwidth]{transformer_truth_vs_pred.png}
+\includegraphics[width=.3\textwidth]{ens_all_nn_truth_vs_pred.png}\includegraphics[width=.3\textwidth]{ens_cnn_attn_truth_vs_pred.png}
+\caption{Ground truth vs.\ prediction (fold 0, seed 0) for each model on its training fold (left panel) and on the held-out test set (right panel), with $R^2$. The bottom row shows the two NN ensembles on the test set.}\label{fig:scatter}\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.49\textwidth]{dfn_learning_curves.png}
+\includegraphics[width=.49\textwidth]{cnn1d_learning_curves.png}
+\includegraphics[width=.49\textwidth]{cnnattention_learning_curves.png}
+\includegraphics[width=.49\textwidth]{transformer_learning_curves.png}
+\caption{Learning curves of all neural-network runs (blue: training loss, red: early-stopping validation loss).}\label{fig:curves}\end{figure}
+
+\section{Discussion}
+\paragraph{Strand asymmetry.} The two orientations of the same 10-mer correlate only $r\approx0.42$ in log affinity, and this does not improve when only high-count pairs are kept (0.425 at count $\geq$30). The asymmetry is therefore systematic, not counting noise. A likely cause is the orientation-dependent expected counts of the Markov background model, possibly combined with position or flank effects in the selection library. Averaging the two strands destroys this signal. Per-strand labels with reverse-complement-grouped CV improved CV $R^2$ by 0.15 (RF) and 0.17 (CNN1D) over merged labels.
+
+\paragraph{Count threshold.} Counts below 10 add many labels whose relative SE is $\sqrt{2/n}$, i.e.\ $>45\%$. A threshold of 30 removes most low-affinity $k$-mers and biases predictions upwards on the shared evaluation rows. A threshold of 10 was the best trade-off. The log transform was marginally better than raw affinity.
+
+\paragraph{Value of the shape features.} For the CNN, one-hot input alone matched one-hot plus shape (0.739 vs.\ 0.738). With 7 windows and 16 one-hot channels the network can learn the information in the shape lookup tables itself. For random forest, adding shape to one-hot helped (0.563 $\to$ 0.599). On their own, shape features are informative (CNN 0.692 without one-hot), and \texttt{fce} carried more signal than \texttt{avg}. Hexamer tables did not help: they are 96--99\% correlated with the central tetramer and enlarge the input.
+
+\paragraph{Model comparison and overfitting.}
+\begin{itemize}
+\item Linear and ridge regression underfit (train $R^2$ 0.50, gap 0.03).
+\item Random forest memorised the noisy labels (train 0.884, gap 0.31).
+\item SVR and LightGBM generalised better (gaps 0.15 and 0.21).
+\item The convolutional models were best. Their validation loss reached its minimum early (best epoch $\approx$22--27) while the training loss kept falling (final train MSE 0.05--0.07 vs.\ best validation MSE 0.26--0.27). This is overfitting, controlled by early stopping: validation and test $R^2$ agree closely (CNN1D 0.735 vs.\ 0.736), so there is no evidence of leakage.
+\item The Transformer had the smallest gap (0.077) and nearly equal train and validation MSE (0.293 vs.\ 0.291). It trained longer (best epoch $\approx$112) and stayed underfit relative to the CNNs.
+\item Averaging runs over folds and seeds helped the CNNs substantially (CNN1D 0.736 $\to$ 0.788). Adding the weaker DFN and Transformer to the ensemble lowered performance (0.756).
+\end{itemize}
+
+\paragraph{SELEX\_test.txt mismatch.} Only 8.4\% of the 5{,}511 10-mers in \texttt{SELEX\_test.txt} appear in \texttt{4.txt}. On the 462 shared $k$-mers its values are uncorrelated with the \texttt{4.txt} affinities (Pearson of logs $-0.03$, Spearman $-0.06$). Its scale is different (max 1.0, weights 1 or 10). It probably comes from another experiment or processing, so it was not used as a test set.
+
+\paragraph{Limitations.} The ablation used a single seed and one-factor-at-a-time changes. We did not test de-duplication of shifted motif overlaps, or similarity-based grouping beyond reverse complements, so overlapping $k$-mers sharing a core motif can still occur on both sides of a split. Hyperparameters were not tuned per model. The only test data come from the same SELEX experiment.
+
+\section{Conclusion}
+The new MD shape tables are complete, internally consistent and differ measurably from the earlier tetramer tables. For Gata4 HT-SELEX the optimal preprocessing has five parts: log affinity, count $\geq$10, per-strand labels, tetramer avg+fce plus one-hot, and standardisation, all evaluated with reverse-complement-grouped CV. With this setup the CNN1D reaches a held-out test $R^2$ of 0.736 (0.788 when its runs are averaged) and is the best of the nine models compared, ahead of CNNAttention (0.725) and the Transformer (0.685). Shape features help tree models but are redundant for convolutional networks given one-hot input, and hexamer tables give no gain over tetramers. The main open issues are the strong strand asymmetry of the SELEX labels and the lack of an independent test set consistent with \texttt{4.txt}.
+
+\begin{thebibliography}{9}
+\bibitem{jolma2013} A.~Jolma \emph{et al.}, DNA-binding specificities of human transcription factors, \emph{Cell} 152, 327--339 (2013).
+\bibitem{rohs2009} R.~Rohs \emph{et al.}, The role of DNA shape in protein--DNA recognition, \emph{Nature} 461, 1248--1253 (2009).
+\end{thebibliography}
+\end{document}
