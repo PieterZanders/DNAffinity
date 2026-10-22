@@ -23,6 +23,7 @@ Labels are taken from the SELEX package output for Gata4 (\texttt{data/selex/Gat
 The new tables \texttt{data/selex/tetramer/\{avg,fce\}\_tetramer.dat} and \texttt{data/selex/hexamer/\{avg,fce\}\_hexamer.dat} give, for every tetramer (256) and hexamer (4096), six average helical parameters (\texttt{avg}) and a flattened $6\times6$ stiffness matrix (\texttt{fce}). The matrices are exactly symmetric and positive definite (minimum eigenvalue $\approx 0.006$), so we keep the 21 unique upper-triangle entries. A 10-mer is represented by 7 overlapping tetramer windows (and 5 hexamer windows). Hexamer $j$ is aligned to its central tetramer window $j{+}1$ and zero-padded at the ends for windowed models. Optional one-hot input adds the 16 one-hot values of the bases in each tetramer window. Flat models use the concatenated windows; windowed models (CNN1D, CNNAttention, Transformer) use a $7\times d$ tensor.
 
 \input{pipeline.tex}
+\input{featuresets.tex}
 
 \subsection{Validation protocol}
 Every $k$-mer is grouped with its reverse complement. A fixed random 10\% of groups (seed 20, drawn over all groups in \texttt{4.txt}) forms the held-out test set. The remaining pool is split by \texttt{GroupKFold} into 5 folds. Inside each training fold, neural networks and LightGBM hold out a random 10\% for early stopping. For every fold model we report train-fold, validation-fold and test metrics. Metrics are $R^2$, Pearson and Spearman correlations on log affinity, given as mean$\pm$sd over folds (and seeds), plus the train--test $R^2$ gap. The ``averaged-runs'' test $R^2$ is the $R^2$ of the mean prediction of all fold/seed models of one type.
@@ -105,6 +106,8 @@ Transformer & 111.6 & 137.6 & 0.293 & 0.291 \\
 \includegraphics[width=.49\textwidth]{transformer_learning_curves.png}
 \caption{Learning curves of all neural-network runs (blue: training loss, red: early-stopping validation loss).}\label{fig:curves}\end{figure}
 
+\input{bench_results.tex}
+
 \section{Discussion}
 \paragraph{Strand asymmetry.} The two orientations of the same 10-mer correlate only $r\approx0.42$ in log affinity, and this does not improve when only high-count pairs are kept (0.425 at count $\geq$30). The asymmetry is therefore systematic, not counting noise. A likely cause is the orientation-dependent expected counts of the Markov background model, possibly combined with position or flank effects in the selection library. Averaging the two strands destroys this signal. Per-strand labels with reverse-complement-grouped CV improved CV $R^2$ by 0.15 (RF) and 0.17 (CNN1D) over merged labels.
 
@@ -122,13 +125,35 @@ Transformer & 111.6 & 137.6 & 0.293 & 0.291 \\
 \item Averaging runs over folds and seeds helped the CNNs substantially (CNN1D 0.736 $\to$ 0.788). Adding the weaker DFN and Transformer to the ensemble lowered performance (0.756).
 \end{itemize}
 
+\paragraph{Which shape feature set?} The tetramer set (a) gave the highest test $R^2$ for every non-linear model and for both ensembles (Table~\ref{tab:bench}):
+\begin{itemize}
+\item CNN1D: 0.736 vs.\ 0.714 (hexamer) and 0.723 (both);
+\item CNNAttention: 0.725 / 0.702 / 0.709;
+\item Transformer: 0.685 / 0.673 / 0.681;
+\item DFN: 0.644 / 0.633 / 0.641;
+\item LightGBM: 0.644 / 0.631 / 0.642;
+\item SVR: 0.598 / 0.586 / 0.588;
+\item RF: 0.572 / 0.549 / 0.563.
+\end{itemize}
+Only the additive models preferred the combined set (Linear 0.484 and Ridge 0.483 vs.\ 0.471/0.470 with tetramers). Hexamers alone were the worst set for every model. There are three reasons:
+\begin{enumerate}
+\item Hexamer averages are 96--99\% correlated with their central tetramer, so they add little new information.
+\item A 10-mer has only 5 hexamer windows against 7 tetramer windows, so the outermost base steps are not described (for windowed models the end positions are zero-padded).
+\item The combined set doubles the shape channels (364-dimensional flat input, 70 channels per position) without adding signal, which slightly increases variance for the flexible models.
+\end{enumerate}
+The additive models gain about 0.013 from the combination because a hexamer value acts as a fixed non-linear (context-dependent) feature of 6 bases, which a linear model cannot build itself. The differences between feature sets (0.01--0.02) are small compared with the differences between models, but they are consistent across models and comparable to or larger than the sd over runs.
+
+\paragraph{Computational cost.} Ridge trains in under 1\,s per run. SVR, RF, DFN and the CNNs take about 0.3--1.5\,min per run under the parallel load. LightGBM (up to 2000 trees with early stopping) and the Transformer are the slowest: about 2--6\,min per run. Feature building takes about 1\,s in all cases. Inference is $\leq$0.3\,s per 1{,}000 sequences for all models except SVR ($\approx$3--4\,s), whose cost scales with the number of support vectors. CNN1D gives the best accuracy at moderate cost (Figure~\ref{fig:time}). The extra hexamer channels did not change NN training cost systematically, but they increased RF and LightGBM time (more candidate split features). The Transformer hexamer runs (mean 330\,s) overlapped with the heaviest parallel load, so part of that difference reflects contention.
+
 \paragraph{SELEX\_test.txt mismatch.} Only 8.4\% of the 5{,}511 10-mers in \texttt{SELEX\_test.txt} appear in \texttt{4.txt}. On the 462 shared $k$-mers its values are uncorrelated with the \texttt{4.txt} affinities (Pearson of logs $-0.03$, Spearman $-0.06$). Its scale is different (max 1.0, weights 1 or 10). It probably comes from another experiment or processing, so it was not used as a test set.
 
 \paragraph{Limitations.} The ablation used a single seed and one-factor-at-a-time changes. We did not test de-duplication of shifted motif overlaps, or similarity-based grouping beyond reverse complements, so overlapping $k$-mers sharing a core motif can still occur on both sides of a split. Hyperparameters were not tuned per model. The only test data come from the same SELEX experiment.
 
 \section{Conclusion}
-The new MD shape tables are complete, internally consistent and differ measurably from the earlier tetramer tables. For Gata4 HT-SELEX the optimal preprocessing has five parts: log affinity, count $\geq$10, per-strand labels, tetramer avg+fce plus one-hot, and standardisation, all evaluated with reverse-complement-grouped CV. With this setup the CNN1D reaches a held-out test $R^2$ of 0.736 (0.788 when its runs are averaged) and is the best of the nine models compared, ahead of CNNAttention (0.725) and the Transformer (0.685). Shape features help tree models but are redundant for convolutional networks given one-hot input, and hexamer tables give no gain over tetramers. The main open issues are the strong strand asymmetry of the SELEX labels and the lack of an independent test set consistent with \texttt{4.txt}.
+The new MD shape tables are complete, internally consistent and differ measurably from the earlier tetramer tables. For Gata4 HT-SELEX the optimal preprocessing has five parts: log affinity, count $\geq$10, per-strand labels, tetramer avg+fce plus one-hot, and standardisation, all evaluated with reverse-complement-grouped CV. With this setup the CNN1D reaches a held-out test $R^2$ of 0.736 (0.788 when its runs are averaged) and is the best of the nine models compared, ahead of CNNAttention (0.725) and the Transformer (0.685). Shape features help tree models but are redundant for convolutional networks given one-hot input, and hexamer tables give no gain over tetramers. We benchmarked three shape feature sets. Tetramer features were best for every non-linear model and the ensembles; hexamers alone were consistently worst, and adding them to tetramers helped only the linear models (+0.013), consistent with their near-redundancy with the central tetramer. CNN1D remains the best accuracy/cost trade-off (about 50\,s per run on one CPU thread). The main open issues are the strong strand asymmetry of the SELEX labels and the lack of an independent test set consistent with \texttt{4.txt}.
 
+\input{appendix.tex}
+\clearpage
 \begin{thebibliography}{9}
 \bibitem{jolma2013} A.~Jolma \emph{et al.}, DNA-binding specificities of human transcription factors, \emph{Cell} 152, 327--339 (2013).
 \bibitem{rohs2009} R.~Rohs \emph{et al.}, The role of DNA shape in protein--DNA recognition, \emph{Nature} 461, 1248--1253 (2009).
