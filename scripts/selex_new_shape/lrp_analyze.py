@@ -64,12 +64,23 @@ for name, od, m, kind, shape in RUNS:
     Btot = B.sum(2)  # all 4 channels of the position (absent channels are z-scored nonzero)
     top = np.argsort(-y)[:50]
     # GATA core check: top k-mers containing GATA (or TATC on this strand)
-    core = []
-    for i in top:
-        s = seqs[i]; mo = re.search('GATA', s) or re.search('TATC', s)
-        if mo: a = np.abs(Btot[i]); core.append(a[mo.start():mo.start() + 4].sum() / a.sum())
+    def core_share(pats, idx):
+        out = []
+        for i in idx:
+            mo = None
+            for p in pats:
+                mo = mo or re.search(p, seqs[i])
+            if mo:
+                a_ = np.abs(Btot[i]); sl_ = slice(mo.start(), mo.start() + len(mo.group()))
+                out.append((a_[sl_].sum() / a_.sum(), prof[sl_].sum()))
+        if not out: return 0, None, None
+        o_ = np.array(out); return len(o_), float(o_[:, 0].mean()), float(o_[:, 1].mean())  # n, observed share, positional expectation
+    prof = np.abs(Btot).mean(0); prof = prof / prof.sum()
+    top100 = np.argsort(-y)[:100]
+    motif = {k: core_share(p, top100) for k, p in [('GGAA/TTCC (ETS core)', ['GGAA', 'TTCC']), ('GATA/TATC', ['GATA', 'TATC'])]}
+    allm = {k: core_share(p, range(len(y))) for k, p in [('GGAA/TTCC (ETS core)', ['GGAA', 'TTCC']), ('GATA/TATC', ['GATA', 'TATC'])]}
     summ[name] = dict(pos_abs=pos_abs.tolist(), win_shape_abs=(wsa.mean(0).tolist() if wsa is not None else None),
-                      top50_with_core=len(core), core_share_mean=float(np.mean(core)) if core else None,
+                      motif_top100=motif, motif_all=allm,
                       fce_top=(sorted(zip(FCE, (fcea.mean(0) / totA).tolist()), key=lambda t: -t[1])[:5] if fcea is not None else None))
     fn = name.replace(' ', '_').replace('(', '').replace(')', '')
     # heatmap nucleotide x position, mean signed relevance on each channel over top-50 k-mers, and over all test rows
