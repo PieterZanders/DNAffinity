@@ -50,7 +50,7 @@ Bases are encoded A,C,G,T $\to$ unit vectors of length 4. Flat models receive th
 
 \subsubsection{Feature tensors per model}
 \begin{itemize}
-\item \textbf{Flat} (Linear, Ridge, SVR, RF, LightGBM, DFN): $[\texttt{avg}_{0..6}\,(42),\ \texttt{fce}_{0..6}\,(147),\ \text{one-hot}\,(40)]$, i.e.\ a 229-dimensional vector (\texttt{flat\_feats}).
+\item \textbf{Flat} (Linear, Ridge, SVR, RF, DFN): $[\texttt{avg}_{0..6}\,(42),\ \texttt{fce}_{0..6}\,(147),\ \text{one-hot}\,(40)]$, i.e.\ a 229-dimensional vector (\texttt{flat\_feats}).
 \item \textbf{Windowed} (CNN1D, CNNAttention, Transformer): a $7\times43$ tensor whose channels per position are $[\texttt{avg}\,(6),\texttt{fce}\,(21),\text{one-hot}\,(16)]$ (\texttt{windowed}).
 \end{itemize}
 
@@ -58,4 +58,4 @@ Bases are encoded A,C,G,T $\to$ unit vectors of length 4. Flat models receive th
 Within each CV fold, features are z-scored with means and standard deviations computed on the training-fold rows only and applied to all rows (validation and test). For windowed input the statistics are pooled over samples and positions per channel. Because of this external scaling, the input \texttt{LayerNorm} of the PyTorch models was switched off (\texttt{normalization=False}).
 
 \subsubsection{Splits}
-\texttt{split()} draws 10\% of all canonical groups in \texttt{4.txt} (seed 20) as the test set. This gives 1{,}335 test rows and 11{,}765 pool rows after filtering, the same set for every model and configuration. The pool is partitioned by \texttt{GroupKFold(5)} on the canonical group, so a $k$-mer and its reverse complement are always on the same side. For NNs and LightGBM, a further random 10\% of each training fold (seed $100+k$ for fold $k$) is the early-stopping set, and reported ``train'' metrics include it.
+\texttt{split()} draws 10\% of all canonical groups in \texttt{4.txt} (seed 20) as the test set. This gives 1{,}335 test rows and 11{,}765 pool rows after filtering, the same set for every model and configuration. The pool is partitioned by \texttt{GroupKFold(5)} on the canonical group, so a $k$-mer and its reverse complement are always on the same side. For NNs, a further random 10\% of each training fold (seed $100+k$ for fold $k$) is the early-stopping set, and reported ``train'' metrics include it.

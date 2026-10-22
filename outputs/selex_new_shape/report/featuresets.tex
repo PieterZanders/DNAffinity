@@ -1,19 +1,20 @@
 \subsection{Shape feature sets benchmarked}\label{sec:fs}
-Three shape feature sets from \texttt{data/selex} were compared. Everything else was identical: labels from \texttt{4.txt} (the shape files have none), log affinity, count $\geq$10, per-strand rows, \texttt{avg}+\texttt{fce}, one-hot, per-fold standardisation, and the same test split and grouped folds. Per window, \texttt{avg} has 6 values and \texttt{fce} 21.
+Four feature sets were compared. Sets (a)--(c) are \emph{shape + one-hot}: the shape windows from \texttt{data/selex} (\texttt{avg}+\texttt{fce}) concatenated with the one-hot encoding. Set (d) is \emph{one-hot only}, with no shape features (\texttt{shape=0}). It was run with the full final protocol (output \texttt{final\_onehot}), not taken from the ablation. Everything else was identical: labels from \texttt{4.txt} (the shape files have none), log affinity, count $\geq$10, per-strand rows, per-fold standardisation, and the same test split and grouped folds. Per window, \texttt{avg} has 6 values and \texttt{fce} 21.
 \begin{table}[H]\centering\small
-\caption{Input dimensions per feature set. Flat models: Linear, Ridge, SVR, RF, LightGBM, DFN. Per-position models: CNN1D, CNNAttention, Transformer. One-hot is 40 values (flat) or 16 per position.}
+\caption{Input dimensions per feature set. Flat models: Linear, Ridge, SVR, RF, DFN. Per-position models: CNN1D, CNNAttention, Transformer. One-hot is 40 values (flat) or 16 per position. $^\dagger$Hexamer channels are zero at positions 0 and 6.}
 \begin{tabular}{lll}\toprule
 Feature set & Flat vector & Per-position tensor\\\midrule
 (a) tetramer & $7\times27+40=229$ & $7\times(27+16)=7\times43$\\
-(b) hexamer & $5\times27+40=175$ & $7\times(27+16)=7\times43$ (hexamer channels zero at positions 0 and 6)\\
-(c) tetramer+hexamer & $7\times27+5\times27+40=364$ & $7\times(27+27+16)=7\times70$\\\bottomrule
+(b) hexamer & $5\times27+40=175$ & $7\times(27+16)=7\times43$$^\dagger$\\
+(c) tetramer+hexamer & $7\times27+5\times27+40=364$ & $7\times(27+27+16)=7\times70$\\
+(d) one-hot only & $40$ ($10\times4$) & $7\times16$ (bases of each tetramer window)\\\bottomrule
 \end{tabular}\label{tab:dims}\end{table}
-In the per-position layout, hexamer $s[j{:}j{+}6]$ ($j=0..4$) is placed at tetramer position $j{+}1$, its central tetramer. The two end positions get zero hexamer channels, which become constant values after standardisation (\texttt{lib.windowed}). Flat models concatenate the 5 hexamer windows without padding (\texttt{lib.flat\_feats}). The tetramer runs (a) are the final runs of Section~\ref{sec:models}.
+In the per-position layout, hexamer $s[j{:}j{+}6]$ ($j=0..4$) is placed at tetramer position $j{+}1$, its central tetramer. The two end positions get zero hexamer channels, which become constant values after standardisation (\texttt{lib.windowed}). Flat models concatenate the 5 hexamer windows without padding (\texttt{lib.flat\_feats}). Set (a) is the chosen preprocessing; its runs are the final runs of Section~\ref{sec:models}.
 
 \subsection{Timing}
 All timings were measured on the box: 8-core Intel Xeon CPU (1 thread per core), 15\,GB RAM, no GPU, PyTorch on CPU.
 \begin{itemize}
-\item Jobs ran as 8 parallel workers. NNs, Linear, Ridge and SVR used 1 thread each; RF used 6 threads (\texttt{n\_jobs}=6) and LightGBM 4. Workers competed for cores, so times are indicative and comparable within this benchmark.
+\item Jobs ran as 8 parallel workers. NNs, Linear, Ridge and SVR used 1 thread each; RF used 6 threads (\texttt{n\_jobs}=6). Workers competed for cores, so times are indicative and comparable within this benchmark.
 \item \emph{Feature time} is building the feature matrix for all 13{,}100 rows.
 \item \emph{Training time} per run is the wall time of \texttt{fit} (including early stopping) plus one prediction pass over all rows.
 \item \emph{Inference} is a separate \texttt{predict} on the 1{,}335 test rows, scaled to 1{,}000 sequences.

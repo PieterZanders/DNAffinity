@@ -45,21 +45,12 @@ The repository models are used through their \texttt{dnaffinity.models} classes.
 \item \emph{Observed:} largest gap (train 0.884, test 0.572). It is also the model that benefited most from shape on top of one-hot in the ablation (0.563 $\to$ 0.599), because the shape tables give trees ready-made smooth physical covariates.
 \end{itemize}
 
-\subsubsection{LightGBM}
-LightGBM is an external gradient-boosting library and is not part of the \texttt{dnaffinity} package. We used \texttt{LGBMRegressor} with:
-\begin{itemize}
-\item up to 2000 trees, learning rate 0.03 and 31 leaves;
-\item row subsampling 0.8 (every iteration), column subsampling 0.5 and L2 $\lambda=1$;
-\item early stopping after 100 rounds without improvement on the early-stopping split.
-\end{itemize}
-\emph{Pros:} sequential additive trees fit residuals, so bias is lower than for RF at comparable variance. It is fast and handles interactions. \emph{Cons:} several hyperparameters, and less interpretable than one tree. \emph{Observed:} test 0.644, equal to the DFN and the best non-neural model.
-
 \subsubsection{DFN (deep feedforward network)}
 \texttt{dfn.DFN} builds \texttt{FeedForward}: \texttt{nn.Linear} layers with \texttt{ReLU} and \texttt{Dropout} after every hidden layer and no activation on the output. It is wrapped in \texttt{RegressionCV}, which adds an optional input \texttt{LayerNorm} (disabled here). The repository default layers are \texttt{[64,32,1]} (and \texttt{[256,128,64,32,1]} with lr $10^{-4}$ for SELEX in \texttt{common.py}). We used \texttt{[256,128,64,1]} (229$\to$256$\to$128$\to$64$\to$1, 100{,}097 parameters), dropout 0.2 and lr $3\times10^{-4}$.
 \begin{itemize}
 \item \emph{Pros:} a universal approximator on the flat vector that can learn any interaction.
 \item \emph{Cons:} no positional inductive bias (a motif shifted by one window is a new pattern), so it needs more data and overfits easily.
-\item \emph{Observed:} test 0.644, gap 0.176, best epoch 44 of 70.
+\item \emph{Observed:} test 0.644, gap 0.176, best epoch 44 of 70, the best flat model.
 \end{itemize}
 
 \subsubsection{CNN1D}
@@ -105,11 +96,11 @@ We used the \texttt{common.py} defaults for this model: $d_\mathrm{model}=32$, 2
 \item \emph{Observed:} test 0.685, smallest gap (0.077), train MSE about equal to validation MSE (0.293 vs.\ 0.291), best epoch $\approx$112. It underfits relative to the CNNs at this size, consistent with its weaker inductive bias on about 10k training rows.
 \end{itemize}
 
-\subsubsection{Ensembles}
-For each model type, the ``averaged-runs'' prediction is the mean over all its fold$\times$seed models (15 for NNs). Cross-model ensembles average these per-model means: all four NNs, or CNN1D+CNNAttention.
+\subsubsection{Averaged runs}
+For each model type, the ``averaged-runs'' prediction is the mean of the test-set predictions of all its fold$\times$seed models (5 for non-NN models, 15 for NNs). Models of different types are never combined.
 \begin{itemize}
 \item \emph{Pros:} averaging reduces the variance from seeds and data subsets. This is the main reason CNN1D rises from 0.736 to 0.788.
-\item \emph{Cons:} it helps only if the members are comparably accurate and their errors differ. Adding the weaker DFN and Transformer lowered the four-NN ensemble to 0.756. CNN1D+CNNAttention (0.785) did not exceed CNN1D alone, because the two architectures make highly correlated errors.
+\item \emph{Cons:} the training cost is multiplied by the number of runs, and so is the inference cost when deployed.
 \end{itemize}
 
 \subsubsection{Shape features and biophysics}
