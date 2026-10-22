@@ -1,9 +1,12 @@
 """Benchmark models x feature sets (tetramer / hexamer / tetra+hexa): metrics, timing, plots, LaTeX tables."""
 import glob, numpy as np, pandas as pd, matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from lib import *
-FS = {'tetramer': 'final', 'hexamer': 'final_ks6', 'tetra+hexa': 'final_ks46', 'one-hot': 'final_onehot'}
-TIME = {'tetramer': 'final_retime_ks4', 'hexamer': 'final_ks6', 'tetra+hexa': 'final_ks46', 'one-hot': 'final_onehot'}
-LAB = {'tetramer': '(a) tetramer shape + one-hot', 'hexamer': '(b) hexamer shape + one-hot', 'tetra+hexa': '(c) tetramer+hexamer shape + one-hot', 'one-hot': '(d) one-hot only (no shape)'}
+FS = {'tetramer': 'final', 'hexamer': 'final_ks6', 'tetra+hexa': 'final_ks46', 'one-hot': 'final_onehot', 'tetramer-MD': 'final_e', 'hexamer-MD': 'final_f', 'tetra+hexa-MD': 'final_g',
+      'perm1': 'final_e_perm1', 'perm2': 'final_e_perm2'}
+TIME = dict(FS, tetramer='final_retime_ks4')
+LAB = {'tetramer': '(a) tetramer shape + one-hot', 'hexamer': '(b) hexamer shape + one-hot', 'tetra+hexa': '(c) tetramer+hexamer shape + one-hot', 'one-hot': '(d) one-hot only (no shape)',
+       'tetramer-MD': '(e) tetramer MD shape only', 'hexamer-MD': '(f) hexamer MD shape only', 'tetra+hexa-MD': '(g) tetramer+hexamer MD shape only',
+       'perm1': 'control: (e) with permuted MD table, perm. 1', 'perm2': 'control: (e) with permuted MD table, perm. 2'}
 MODELS = ['linear', 'ridge', 'svr', 'rf', 'dfn', 'cnn1d', 'cnnattention', 'transformer']; NN = MODELS[4:]
 NM = dict(linear='Linear', ridge='Ridge', svr='SVR', rf='RF', dfn='DFN', cnn1d='CNN1D', cnnattention='CNNAttention', transformer='Transformer')
 P = OUT / 'plots' / 'bench'; P.mkdir(parents=True, exist_ok=True); rows = []
@@ -35,16 +38,17 @@ for fs, d in FS.items():
             for h in hs: H = np.load(h, allow_pickle=True); a.plot(H[0], 'b', alpha=.3, lw=1); a.plot(H[1], 'r', alpha=.3, lw=1)
             a.set(title=f'{NM[m]} [{fs}] {len(hs)} runs', xlabel='epoch', ylabel='MSE'); a.set_yscale('log'); plt.tight_layout(); plt.savefig(P / f'curves_{fs.replace("+", "_")}_{m}.png', dpi=100); plt.close()
 B = pd.DataFrame(rows); B.to_csv(OUT / 'benchmark_featuresets.csv', index=False); pd.set_option('display.width', 250); print(B.round(3).to_string())
-order = MODELS; fss = list(FS)
-fig, a = plt.subplots(figsize=(11, 4)); w = .2
-for i, fs in enumerate(fss):
-    s = B[B.fs == fs].set_index('model').reindex(order); a.bar(np.arange(len(order)) + (i - 1.5) * w, s.test_r2, w, yerr=s.test_r2_sd.fillna(0), label=LAB[fs])
-a.set_xticks(range(len(order))); a.set_xticklabels([NM[m] for m in order], rotation=30, ha='right'); a.set_ylabel('test R² (mean±sd over runs)'); a.set_ylim(0.3, 0.8); a.set_title('test R² per model and feature set'); a.legend(); plt.tight_layout(); plt.savefig(P / 'grouped_bar.png', dpi=120); plt.close()
-fig, a = plt.subplots(figsize=(7, 4.5)); mk = {'tetramer': 'o', 'hexamer': 's', 'tetra+hexa': '^', 'one-hot': 'D'}
+order = MODELS; fss = [k for k in FS if not k.startswith('perm')]; ALL = list(FS)
+fig, a = plt.subplots(figsize=(13, 4.5)); cols = {'tetramer': '#1f77b4', 'hexamer': '#ff7f0e', 'tetra+hexa': '#2ca02c', 'one-hot': '#d62728', 'tetramer-MD': '#aec7e8', 'hexamer-MD': '#ffbb78', 'tetra+hexa-MD': '#98df8a'}
+po = ['tetramer', 'tetramer-MD', 'hexamer', 'hexamer-MD', 'tetra+hexa', 'tetra+hexa-MD', 'one-hot']; w = .8 / len(po)
+for i, fs in enumerate(po):
+    s_ = B[B.fs == fs].set_index('model').reindex(order); a.bar(np.arange(len(order)) + (i - 3) * w, s_.test_r2, w, yerr=s_.test_r2_sd.fillna(0), label=LAB[fs], color=cols[fs], hatch='//' if fs.endswith('-MD') else None, edgecolor='k', lw=.3)
+a.set_xticks(range(len(order))); a.set_xticklabels([NM[m] for m in order], rotation=30, ha='right'); a.set_ylabel('test R² (mean±sd over runs)'); a.set_ylim(0.2, 0.8); a.set_title('test R² per model: with (solid) vs without (hatched) one-hot'); a.legend(fontsize=7, ncol=2); plt.tight_layout(); plt.savefig(P / 'grouped_bar.png', dpi=120); plt.close()
+fig, a = plt.subplots(figsize=(8, 5.5)); mk = {'tetramer': 'o', 'hexamer': 's', 'tetra+hexa': '^', 'one-hot': 'D', 'tetramer-MD': 'o', 'hexamer-MD': 's', 'tetra+hexa-MD': '^'}
 for fs in fss:
-    s = B[(B.fs == fs) & B.t_fit.notna()]; a.scatter(s.t_fit, s.test_r2, marker=mk[fs], label=LAB[fs])
+    s = B[(B.fs == fs) & B.t_fit.notna()]; a.scatter(s.t_fit, s.test_r2, marker=mk[fs], label=LAB[fs], facecolors='none' if fs.endswith('-MD') else None, edgecolors=cols[fs] if fs.endswith('-MD') else None, c=None if fs.endswith('-MD') else cols[fs])
     for _, r in s.iterrows(): a.annotate(NM[r.model], (r.t_fit, r.test_r2), fontsize=6)
-a.set_xscale('log'); a.set(xlabel='training time per run [s] (1 thread for NNs/linear/SVR)', ylabel='test R²'); a.legend(); plt.tight_layout(); plt.savefig(P / 'time_vs_r2.png', dpi=120); plt.close()
+a.set_xscale('log'); a.set(xlabel='training time per run [s] (1 thread for NNs/linear/SVR)', ylabel='test R²'); a.legend(fontsize=7); plt.tight_layout(); plt.savefig(P / 'time_vs_r2.png', dpi=120); plt.close()
 f = lambda v, n=3: '--' if pd.isna(v) else f'{v:.{n}f}'
 pm = lambda r, k: f(r[k]) + ('' if pd.isna(r.get(k + '_sd')) else f'$\\pm${r[k + "_sd"]:.3f}')
 T = []
@@ -61,18 +65,44 @@ for fs in fss:
     T.append(r'\bottomrule\end{tabular}\label{tab:fs_%s}\end{table}' % fs.replace('+', '').replace('-', '') + '\n')
 open(OUT / 'report' / 'tab_fs_full.tex', 'w').write('\n'.join(T))
 L = []
+gt = lambda fs, m, k='test_r2': B[(B.fs == fs) & (B.model == m)][k].iloc[0] if len(B[(B.fs == fs) & (B.model == m)]) else np.nan
 for m in order:
-    L.append(NM[m] + ' & ' + ' & '.join(('\\textbf{%s}' % f(B[(B.fs == fs) & (B.model == m)].test_r2.iloc[0])) if B[(B.fs == fs) & (B.model == m)].test_r2.iloc[0] == B[B.model == m].test_r2.max() else f(B[(B.fs == fs) & (B.model == m)].test_r2.iloc[0]) for fs in fss) + ' & ' + ' & '.join(f(B[(B.fs == fs) & (B.model == m)].avg_runs_r2.iloc[0]) for fs in fss) + r' \\')
+    best = max(gt(fs, m) for fs in fss)
+    L.append(NM[m] + ' & ' + ' & '.join((('\\textbf{%s}' % f(gt(fs, m))) if gt(fs, m) == best else f(gt(fs, m))) for fs in po) + ' & ' + ' & '.join(f(gt(fs, m, 'avg_runs_r2')) for fs in po) + r' \\')
 open(OUT / 'report' / 'tab_bench.tex', 'w').write('\n'.join(L))
+for fn, sets in [('tab_time.tex', fss[:4]), ('tab_time2.tex', fss[4:])]:
+    L = []
+    for m in MODELS:
+        cells = [NM[m]]
+        for fs in sets:
+            r = B[(B.fs == fs) & (B.model == m)]
+            cells += ['--'] * 3 if len(r) == 0 else [f(r.iloc[0].t_feat, 2), f'{r.iloc[0].t_fit:.1f}$\\pm${r.iloc[0].t_fit_sd:.1f}', f(r.iloc[0].t_inf1k, 2)]
+        L.append(' & '.join(cells) + r' \\')
+    open(OUT / 'report' / fn, 'w').write('\n'.join(L))
 L = []
 for m in MODELS:
-    cells = [NM[m]]
-    for fs in fss:
-        r = B[(B.fs == fs) & (B.model == m)]
-        cells += ['--'] * 3 if len(r) == 0 else [f(r.iloc[0].t_feat, 2), f'{r.iloc[0].t_fit:.1f}$\\pm${r.iloc[0].t_fit_sd:.1f}', f(r.iloc[0].t_inf1k, 2)]
-    L.append(' & '.join(cells) + r' \\')
-open(OUT / 'report' / 'tab_time.tex', 'w').write('\n'.join(L))
-L = []
-for m in MODELS:
-    L.append(NM[m] + ' & ' + ' & '.join(f(B[(B.fs == fs) & (B.model == m)].t_total.iloc[0] / 60, 1) if len(B[(B.fs == fs) & (B.model == m)]) else '--' for fs in fss) + r' \\')
+    L.append(NM[m] + ' & ' + ' & '.join(f(gt(fs, m, 't_total') / 60, 1) for fs in fss) + r' \\')
 open(OUT / 'report' / 'tab_time_total.tex', 'w').write('\n'.join(L))
+L = []
+for m in ['rf', 'dfn', 'cnn1d']:
+    cells = [NM[m]]
+    for fs in ['tetramer-MD', 'perm1', 'perm2']:
+        r = B[(B.fs == fs) & (B.model == m)]
+        cells += ['--', '--'] if len(r) == 0 else [pm(r.iloc[0], 'test_r2'), f(r.iloc[0].avg_runs_r2)]
+    cells += [f(gt('one-hot', m)), f(gt('tetramer', m))]
+    L.append(' & '.join(cells) + r' \\')
+open(OUT / 'report' / 'tab_perm.tex', 'w').write('\n'.join(L))
+# compact main-text comparison: averaged-runs test predictions, models x sets
+cs = [('tetramer', '(a) tetra shape+one-hot'), ('one-hot', '(d) one-hot only'), ('tetramer-MD', '(e) tetra MD only'), ('perm1', 'control: permuted MD table')]
+ms = ['ridge', 'rf', 'dfn', 'cnn1d']
+fig, ax = plt.subplots(len(ms), len(cs), figsize=(11, 10.5), sharex=True, sharey=True)
+for i, m in enumerate(ms):
+    for j, (fs, t) in enumerate(cs):
+        a = ax[i, j]; fl = sorted(glob.glob(str(OUT / FS[fs] / m / 'fold*_seed*.npz')))
+        if not fl: a.axis('off'); continue
+        z0 = np.load(fl[0]); te = z0['te']; yt = z0['y'][te]; p = np.mean([np.load(q)['pred'][te] for q in fl], 0)
+        a.scatter(yt, p, s=2, alpha=.3); lo, hi = yt.min(), yt.max(); a.plot([lo, hi], [lo, hi], 'k--', lw=1)
+        a.set_title(f'{NM[m]} | {t}\nR²={metrics(yt, p)["r2"]:.3f}', fontsize=8)
+        if i == len(ms) - 1: a.set_xlabel('true log affinity')
+        if j == 0: a.set_ylabel('predicted')
+plt.tight_layout(); plt.savefig(P / 'compare_truth_pred.png', dpi=110); plt.close()

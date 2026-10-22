@@ -20,6 +20,9 @@ TAB = {}
 for k, n in [(4, 'tetramer'), (6, 'hexamer')]:
     TAB[(k, 'avg')] = _tab(ROOT / f'data/selex/{n}/avg_{n}.dat')
     TAB[(k, 'fce')] = {s: v.reshape(6, 6)[IU] for s, v in _tab(ROOT / f'data/selex/{n}/fce_{n}.dat').items()}  # 21 unique of symmetric 6x6
+if os.environ.get('PERM_TAB'):  # control: random lookup table = real MD rows reassigned to random tetramers (same values, same dim)
+    _ks = sorted(TAB[(4, 'avg')]); _p = np.random.RandomState(int(os.environ['PERM_TAB'])).permutation(len(_ks))
+    for _q in ('avg', 'fce'): _o = TAB[(4, _q)]; TAB[(4, _q)] = {k: _o[_ks[j]] for k, j in zip(_ks, _p)}
 OH = {b: np.eye(4)[i] for i, b in enumerate('ACGT')}
 
 def windowed(seqs, ks=(4,), props=('avg', 'fce'), onehot=False, shape=True):

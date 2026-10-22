@@ -8,9 +8,16 @@ FCE = [f'{PAR[i]}-{PAR[j]}' for i, j in zip(*IU)]; NUC = 'ACGT'
 S = {}
 def load(od, m):
     z = np.load(OUT / od / f'lrp_{m}.npz'); return z
-def per_base(R, kind, shape):
-    """-> (n,10,4) one-hot relevance per base position & nucleotide channel; plus shape groups."""
+def per_base(R, kind, shape, oh=True, seqs=None):
+    """-> (n,10,4) relevance per base position & nucleotide channel. Without one-hot, the relevance of each tetramer
+    window (sum of its shape channels) is projected equally onto its 4 bases, on the channel of the base present."""
     n = len(R); B = np.zeros((n, 10, 4))
+    if not oh:
+        W = R.sum(2) if kind == 'cnn' else R[:, :42].reshape(n, 7, 6).sum(2) + R[:, 42:189].reshape(n, 7, 21).sum(2)
+        pres = np.array([[NUC.index(ch) for ch in s] for s in seqs])
+        for i in range(7):
+            for k in range(4): B[np.arange(n), i + k, pres[:, i + k]] += W[:, i] / 4
+        return B
     if kind == 'cnn':
         o = 27 if shape else 0
         for i in range(7):
@@ -18,11 +25,11 @@ def per_base(R, kind, shape):
     else:
         o = 189 if shape else 0; B = R[:, o:o + 40].reshape(n, 10, 4)
     return B
-def groups(R, kind, shape):
+def groups(R, kind, shape, oh=True):
     """dict group -> (n,) summed relevance; and per-window shape relevance (n,7)."""
     n = len(R); g = {}
     if kind == 'cnn':
-        g['one-hot'] = R[:, :, 27 if shape else 0:].sum((1, 2))
+        if oh: g['one-hot'] = R[:, :, 27 if shape else 0:].sum((1, 2))
         if shape:
             for p in range(6): g['avg ' + PAR[p]] = R[:, :, p].sum(1)
             dg = [6 + j for j, (a, b) in enumerate(zip(*IU)) if a == b]; od = [6 + j for j, (a, b) in enumerate(zip(*IU)) if a != b]
@@ -30,7 +37,7 @@ def groups(R, kind, shape):
             fce = R[:, :, 6:27].sum(1); win_shape = R[:, :, :27].sum(2)
         else: fce = None; win_shape = None
     else:
-        g['one-hot'] = R[:, 189 if shape else 0:][:, :40].sum(1)
+        if oh: g['one-hot'] = R[:, 189 if shape else 0:][:, :40].sum(1)
         if shape:
             A = R[:, :42].reshape(n, 7, 6); F = R[:, 42:189].reshape(n, 7, 21)
             for p in range(6): g['avg ' + PAR[p]] = A[:, :, p].sum(1)
@@ -39,11 +46,12 @@ def groups(R, kind, shape):
             fce = F.sum(1); win_shape = A.sum(2) + F.sum(2)
         else: fce = None; win_shape = None
     return g, fce, win_shape
-def absgroups(R, kind, shape):  # same grouping on |R|
-    return groups(np.abs(R), kind, shape)
-RUNS = [('DFN (a)', 'lrp_a', 'dfn', 'dfn', True), ('CNN1D (a)', 'lrp_a', 'cnn1d', 'cnn', True), ('CNN1D (d)', 'lrp_d', 'cnn1d', 'cnn', False)]
+def absgroups(R, kind, shape, oh=True):  # same grouping on |R|
+    return groups(np.abs(R), kind, shape, oh)
+RUNS = [('DFN (a)', 'lrp_a', 'dfn', 'dfn', True, True), ('CNN1D (a)', 'lrp_a', 'cnn1d', 'cnn', True, True), ('CNN1D (d)', 'lrp_d', 'cnn1d', 'cnn', False, True),
+        ('DFN (e)', 'final_e', 'dfn', 'dfn', True, False), ('CNN1D (e)', 'final_e', 'cnn1d', 'cnn', True, False)]
 summ, grows, cons_rows = {}, [], []
-for name, od, m, kind, shape in RUNS:
+for name, od, m, kind, shape, oh in RUNS:
     z = load(od, m); Rall, out, G, R0 = z['R'], z['out'], z['G'], z['R0']; seqs = z['seqs']; y = z['y']; nr = len(Rall)
     # conservation per run
     sr = Rall.reshape(nr, Rall.shape[1], -1).sum(2)
@@ -52,12 +60,12 @@ for name, od, m, kind, shape in RUNS:
     lz = [np.abs(R0[r] - G[r]).max() / np.abs(G[r]).max() for r in range(nr)]
     cg = [np.corrcoef(Rall[r].ravel(), G[r].ravel())[0, 1] for r in range(nr)]
     R = Rall.mean(0)  # mean over models, per test row
-    gs, fce, ws = groups(R, kind, shape); ga, fcea, wsa = absgroups(R, kind, shape)
+    gs, fce, ws = groups(R, kind, shape, oh); ga, fcea, wsa = absgroups(R, kind, shape, oh)
     totA = sum(v.mean() for v in ga.values())
     for k in gs: grows.append(dict(model=name, group=k, abs_share=ga[k].mean() / totA, signed_mean=gs[k].mean(), signed_top=gs[k][np.argsort(-y)[:100]].mean()))
     cons_rows.append(dict(model=name, runs=nr, corr=np.mean(cs), slope=np.mean(sl), ratio=ratio, lrp0_vs_gxi=np.max(lz), corr_lrp_gxi=np.mean(cg)))
     # per-base / position
-    B = per_base(R, kind, shape); Ba = per_base(np.abs(R), kind, shape)
+    B = per_base(R, kind, shape, oh, seqs); Ba = per_base(np.abs(R), kind, shape, oh, seqs)
     pos_abs = Ba.sum(2).mean(0)
     present = np.array([[NUC.index(ch) for ch in s] for s in seqs])
     Bp = np.take_along_axis(B, present[:, :, None], 2)[:, :, 0]  # relevance on present-base channel
@@ -98,25 +106,35 @@ for name, od, m, kind, shape in RUNS:
     fig.suptitle(f'{name}: LRP relevance per base (sum over the 4 channels of the position), top-6 test k-mers'); plt.tight_layout(); plt.savefig(P / f'logo_{fn}.png', dpi=120); plt.close()
     # position profile + window shape
     fig, ax = plt.subplots(1, 2, figsize=(9, 2.8))
-    ax[0].bar(range(1, 11), Ba.sum(2).mean(0)); ax[0].set(xlabel='base position', ylabel='mean |R| (one-hot)', title=f'{name}: one-hot per position')
+    ax[0].bar(range(1, 11), Ba.sum(2).mean(0)); ax[0].set(xlabel='base position', ylabel='mean |R| (one-hot)' if oh else 'mean |R| (projected from windows)', title=f'{name}: ' + ('one-hot per position' if oh else 'window relevance projected to bases'))
     if wsa is not None: ax[1].bar(range(1, 8), wsa.mean(0)); ax[1].set(xlabel='tetramer window', ylabel='mean |R| (shape)', title=f'{name}: shape per window')
     else: ax[1].axis('off')
     plt.tight_layout(); plt.savefig(P / f'pos_{fn}.png', dpi=120); plt.close()
 Gd = pd.DataFrame(grows); C = pd.DataFrame(cons_rows); print(Gd.round(4).to_string()); print(C.round(4).to_string()); print(json.dumps(summ, indent=1))
 Gd.to_csv(OUT / 'lrp_groups.csv', index=False); C.to_csv(OUT / 'lrp_conservation.csv', index=False); json.dump(summ, open(OUT / 'lrp_summary.json', 'w'), indent=1)
-# feature-type bar (abs share) for set (a)
-fig, a = plt.subplots(figsize=(9, 3.4)); gs_ = [g for g in Gd.group.unique()]; w = .38
-for i, mname in enumerate(['DFN (a)', 'CNN1D (a)']):
-    s = Gd[Gd.model == mname].set_index('group').reindex(gs_); a.bar(np.arange(len(gs_)) + (i - .5) * w, s.abs_share, w, label=mname)
-a.set_xticks(range(len(gs_))); a.set_xticklabels(gs_, rotation=30, ha='right'); a.set_ylabel('share of total |R|'); a.legend(); plt.tight_layout(); plt.savefig(P / 'groups_abs.png', dpi=120); plt.close()
-f3 = lambda v: f'{v:.3f}'
-L = []
+MN = ['DFN (a)', 'CNN1D (a)', 'CNN1D (d)', 'DFN (e)', 'CNN1D (e)']
+gs_ = list(dict.fromkeys(Gd.group))
+fig, a = plt.subplots(figsize=(10, 3.6)); w = .8 / len(MN)
+for i, mname in enumerate(MN):
+    s_ = Gd[Gd.model == mname].set_index('group').reindex(gs_); a.bar(np.arange(len(gs_)) + (i - 2) * w, s_.abs_share.fillna(0), w, label=mname, hatch='//' if '(e)' in mname else None, edgecolor='k', lw=.3)
+a.set_xticks(range(len(gs_))); a.set_xticklabels(gs_, rotation=30, ha='right'); a.set_ylabel('share of total |R|'); a.legend(fontsize=7); plt.tight_layout(); plt.savefig(P / 'groups_abs.png', dpi=120); plt.close()
+fig, a = plt.subplots(figsize=(10, 3.6))
+for i, mname in enumerate(MN):
+    s_ = Gd[Gd.model == mname].set_index('group').reindex(gs_); a.bar(np.arange(len(gs_)) + (i - 2) * w, s_.signed_top.fillna(0), w, label=mname, hatch='//' if '(e)' in mname else None, edgecolor='k', lw=.3)
+a.axhline(0, c='k', lw=.5); a.set_xticks(range(len(gs_))); a.set_xticklabels(gs_, rotation=30, ha='right'); a.set_ylabel('mean signed R, top-100 k-mers'); a.legend(fontsize=7); plt.tight_layout(); plt.savefig(P / 'groups_signed.png', dpi=120); plt.close()
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.2))
+for mname in ['DFN (a)', 'DFN (e)', 'CNN1D (a)', 'CNN1D (e)']:
+    v = np.array(summ[mname]['win_shape_abs']); ax[0].plot(range(1, 8), v / v.sum(), 'o-', label=mname)
+    p = np.array(summ[mname]['pos_abs']); ax[1].plot(range(1, 11), p / p.sum(), 'o-', label=mname)
+p = np.array(summ['CNN1D (d)']['pos_abs']); ax[1].plot(range(1, 11), p / p.sum(), 'o-', label='CNN1D (d)')
+ax[0].set(xlabel='tetramer window', ylabel='share of shape |R|', title='shape relevance per window'); ax[1].set(xlabel='base position', ylabel='share', title='per-base relevance (one-hot, or projected for (e))'); ax[0].legend(fontsize=7); ax[1].legend(fontsize=7)
+plt.tight_layout(); plt.savefig(P / 'window_compare.png', dpi=120); plt.close()
+L, L2 = [], []
 for g in gs_:
-    cells = [g.replace('avg ', '\\texttt{avg} ').replace('fce ', '\\texttt{fce} ')]
-    for mname in ['DFN (a)', 'CNN1D (a)', 'CNN1D (d)']:
-        r = Gd[(Gd.model == mname) & (Gd.group == g)]
-        cells += ['--'] * 3 if len(r) == 0 else [f3(r.abs_share.iloc[0]), f'{r.signed_mean.iloc[0]:+.3f}', f'{r.signed_top.iloc[0]:+.3f}']
-    L.append(' & '.join(cells) + r' \\')
-open(OUT / 'report' / 'tab_lrp_groups.tex', 'w').write('\n'.join(L))
+    nm = g.replace('avg ', '\\texttt{avg} ').replace('fce ', '\\texttt{fce} ')
+    row = lambda k, fmt: [('--' if len(Gd[(Gd.model == mn) & (Gd.group == g)]) == 0 else fmt(Gd[(Gd.model == mn) & (Gd.group == g)][k].iloc[0])) for mn in MN]
+    L.append(' & '.join([nm] + row('abs_share', lambda v: f'{v:.3f}')) + r' \\')
+    L2.append(' & '.join([nm] + row('signed_mean', lambda v: f'{v:+.3f}') + row('signed_top', lambda v: f'{v:+.3f}')) + r' \\')
+open(OUT / 'report' / 'tab_lrp_groups.tex', 'w').write('\n'.join(L)); open(OUT / 'report' / 'tab_lrp_signed.tex', 'w').write('\n'.join(L2))
 L = [f"{r.model} & {r.runs} & {r.corr:.3f} & {r.slope:.3f} & {r.ratio:.3f} & {r.lrp0_vs_gxi:.1e} & {r.corr_lrp_gxi:.3f} \\\\" for r in C.itertuples()]
 open(OUT / 'report' / 'tab_lrp_cons.tex', 'w').write('\n'.join(L))

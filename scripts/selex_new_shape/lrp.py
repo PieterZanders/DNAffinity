@@ -74,7 +74,7 @@ def gxi(net, x):
 c = json.load(open(OUT / od / 'config.json')); d = load_labels(10, 'perstrand')
 full = pd.read_csv(ROOT / 'data/selex/Gata4/4.txt', sep='\t'); allg = full.Kmer.map(canonical).values; tg = set(allg[split(allg)])
 T = np.where(d.group.isin(tg).values)[0]; seqs = list(d.seq.values[T]); y = np.log(d.aff.values[T])
-X = (windowed if model == 'cnn1d' else flat_feats)(seqs, (4,), ('avg', 'fce'), True, shape)
+X = (windowed if model == 'cnn1d' else flat_feats)(seqs, tuple(int(k) for k in c['ks']), tuple(c['props'].split('+')), bool(c['onehot']), bool(c['shape']))
 RS, RG, RZ, OUTS, CONS = [], [], [], [], []
 for f in sorted(glob.glob(str(OUT / od / model / 'fold*_seed*.pt'))):
     ck = torch.load(f, weights_only=False); Z = torch.tensor((X - ck['mu']) / ck['sd'], dtype=torch.float32)
