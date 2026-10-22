@@ -1,0 +1,61 @@
+\subsection{Data processing pipeline}\label{sec:pipeline}
+All steps are implemented in \texttt{scripts/selex\_new\_shape/lib.py} (functions \texttt{load\_labels}, \texttt{split}, \texttt{flat\_feats}, \texttt{windowed}, \texttt{tf}) and \texttt{train\_final.py}. Figure~\ref{fig:pipe} summarises them.
+
+\begin{figure}[H]\centering
+\begin{tikzpicture}[node distance=4mm and 6mm, every node/.style={font=\scriptsize}, box/.style={draw, rounded corners, align=center, minimum height=8mm, text width=27mm, fill=gray!8}, arr/.style={-Stealth, thick}]
+\node[box] (a) {\texttt{4.txt}\\126{,}624 10-mers\\obs, exp, Aff, SE};
+\node[box, right=of a] (b) {filter\\ObservedCount $\geq$10\\13{,}100 rows};
+\node[box, right=of b] (c) {per-strand labels\\$y=\log(\mathrm{Aff})$\\group = canonical};
+\node[box, right=of c] (d) {split by RC group\\test 10\% (1{,}335)\\pool (11{,}765), 5 folds};
+\node[box, below=9mm of a] (e) {10-mer $\to$ 7 tetramer\\windows $s[i{:}i{+}4]$};
+\node[box, right=of e] (f) {lookup \texttt{avg} (6)\\+ \texttt{fce} (21)\\+ one-hot (16)};
+\node[box, right=of f] (g) {flat: 229-vector\\windowed: $7\times43$};
+\node[box, right=of g] (h) {z-score on train fold\\$y$ standardised\\fit / early stop};
+\draw[arr] (a)--(b); \draw[arr] (b)--(c); \draw[arr] (c)--(d);
+\draw[arr] (e)--(f); \draw[arr] (f)--(g); \draw[arr] (g)--(h); \draw[arr] (d)--(h);
+\draw[arr] (c.south) |- ++(0,-3.5mm) -| (e.north);
+\end{tikzpicture}
+\caption{Processing pipeline for the chosen configuration. Row counts are those of the final runs.}\label{fig:pipe}\end{figure}
+
+\subsubsection{Reading and checking the labels}
+\texttt{4.txt} (tab-separated, quoted header, R row names) is read with pandas. The columns used are \texttt{Kmer}, \texttt{ObservedCount} ($n$), \texttt{ExpectedCount} ($e$, from the Markov background model of round 0) and \texttt{Affinity}. We checked that
+\begin{equation}
+\mathrm{Aff} = 0.172\,(n/e)^{1/4}, \qquad \mathrm{SE}\approx \sqrt{2}\,\mathrm{Aff}/\sqrt{n},
+\end{equation}
+so $\mathrm{SE}/\mathrm{Aff}=\sqrt{2/n}$: 141\% at $n=1$ and 45\% at $n=10$. The table is zero-truncated. Only $k$-mers seen at least once in the selected round are listed (12.1\% of $4^{10}$), and there are no entries for unobserved, low-affinity $k$-mers. The models therefore learn on the observed range only.
+
+\subsubsection{Count filter}
+Rows with $n\geq10$ are kept (\texttt{load\_labels(min\_count=10)}), leaving 13{,}100 of 126{,}624 rows. This bounds the relative SE at about 45\%. The ablation (Table~\ref{tab:abl}) chose this threshold.
+
+\subsubsection{Per-strand vs.\ merged labels}
+Each row's group key is the canonical sequence $\min(s,\mathrm{rc}(s))$, with \texttt{canonical} from \texttt{dnaffinity.preprocess}.
+\begin{itemize}
+\item \emph{Per-strand} mode (chosen) keeps each measured orientation as its own row with its own label. A reverse-complement row exists only if that orientation itself passed the filter. The 13{,}100 rows form 10{,}771 groups.
+\item \emph{Merged} mode averages the affinities of the measured orientations per group and emits the canonical sequence and its reverse complement with the same label (reverse-complement augmentation).
+\end{itemize}
+
+\subsubsection{Label transform}
+The target is $y=\log(\mathrm{Aff})=\tfrac14\log(n/e)+\log 0.172$, i.e.\ a scaled log-enrichment. Inside each training fold, $y$ is also standardised for model fitting, $\tilde y=(y-\bar y_\mathrm{tr})/s_\mathrm{tr}$, and predictions are transformed back. All metrics are computed on $y$.
+
+\subsubsection{Windowing and shape lookup}
+A 10-mer $s$ is cut into the $7$ overlapping tetramers $s[i{:}i{+}4]$, $i=0,\dots,6$ (each describes the central base step of its window). For each window we look up:
+\begin{itemize}
+\item the 6 averages of \texttt{avg\_tetramer.dat} (shift, slide, rise, tilt, roll, twist);
+\item the 21 upper-triangle entries (including the diagonal) of the symmetric $6\times6$ stiffness matrix in \texttt{fce\_tetramer.dat}. The 36 stored values contain 15 duplicates.
+\end{itemize}
+Hexamer tables, used only in the ablation, are read the same way. A flat vector concatenates the 5 hexamers $s[j{:}j{+}6]$. In windowed form, hexamer $j$ is placed at tetramer position $j{+}1$, i.e.\ aligned on its central tetramer, and the two end positions are zero-padded.
+
+\subsubsection{One-hot encoding}
+Bases are encoded A,C,G,T $\to$ unit vectors of length 4. Flat models receive the one-hot of the full 10-mer ($10\times4=40$ values). Windowed models receive the one-hot of the 4 bases of each window ($16$ values per position).
+
+\subsubsection{Feature tensors per model}
+\begin{itemize}
+\item \textbf{Flat} (Linear, Ridge, SVR, RF, LightGBM, DFN): $[\texttt{avg}_{0..6}\,(42),\ \texttt{fce}_{0..6}\,(147),\ \text{one-hot}\,(40)]$, i.e.\ a 229-dimensional vector (\texttt{flat\_feats}).
+\item \textbf{Windowed} (CNN1D, CNNAttention, Transformer): a $7\times43$ tensor whose channels per position are $[\texttt{avg}\,(6),\texttt{fce}\,(21),\text{one-hot}\,(16)]$ (\texttt{windowed}).
+\end{itemize}
+
+\subsubsection{Standardisation}
+Within each CV fold, features are z-scored with means and standard deviations computed on the training-fold rows only and applied to all rows (validation and test). For windowed input the statistics are pooled over samples and positions per channel. Because of this external scaling, the input \texttt{LayerNorm} of the PyTorch models was switched off (\texttt{normalization=False}).
+
+\subsubsection{Splits}
+\texttt{split()} draws 10\% of all canonical groups in \texttt{4.txt} (seed 20) as the test set. This gives 1{,}335 test rows and 11{,}765 pool rows after filtering, the same set for every model and configuration. The pool is partitioned by \texttt{GroupKFold(5)} on the canonical group, so a $k$-mer and its reverse complement are always on the same side. For NNs and LightGBM, a further random 10\% of each training fold (seed $100+k$ for fold $k$) is the early-stopping set, and reported ``train'' metrics include it.
