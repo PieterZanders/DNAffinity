@@ -46,7 +46,24 @@ A 10-mer $s$ is cut into the $7$ overlapping tetramers $s[i{:}i{+}4]$, $i=0,\dot
 Hexamer tables, used only in the ablation, are read the same way. A flat vector concatenates the 5 hexamers $s[j{:}j{+}6]$. In windowed form, hexamer $j$ is placed at tetramer position $j{+}1$, i.e.\ aligned on its central tetramer, and the two end positions are zero-padded.
 
 \subsubsection{One-hot encoding}
-Bases are encoded A,C,G,T $\to$ unit vectors of length 4. Flat models receive the one-hot of the full 10-mer ($10\times4=40$ values). Windowed models receive the one-hot of the 4 bases of each window ($16$ values per position).
+\emph{What it does.} One-hot encoding turns each base into a 4-dimensional binary vector with a single 1 at the position of that base in the fixed order (A, C, G, T): $\mathrm{A}\to(1,0,0,0)$, $\mathrm{C}\to(0,1,0,0)$, $\mathrm{G}\to(0,0,1,0)$, $\mathrm{T}\to(0,0,0,1)$ (\texttt{lib.OH}).
+
+\emph{Why it is needed.} The shape tables describe each tetramer only indirectly, through 27 physical numbers. One-hot gives the models the sequence identity itself. Coding bases as integers (e.g.\ A=0, \dots, T=3) would impose a false order and spacing (T ``larger'' than A, G ``between'' C and T). One-hot has no such ordinal bias: all four bases are equidistant, and every weight that multiplies a channel is specific to one base at one position, like a position weight matrix.
+
+\emph{Layout in \texttt{lib.py}.}
+\begin{itemize}
+\item \textbf{Flat models} (\texttt{flat\_feats}): the 10 bases of the 10-mer are encoded in order and concatenated, giving $10\times4=40$ values. They come after the shape block: $[\texttt{avg}\,(42),\ \texttt{fce}\,(147),\ \text{one-hot}\,(40)]$ for set (a). Channel $4j+n$ of the one-hot block is 1 if base $j$ ($j=0..9$) is nucleotide $n$.
+\item \textbf{Windowed models} (\texttt{windowed}): at tetramer window $i$ ($i=0..6$, bases $s[i{:}i{+}4]$) the 4 bases of the window are encoded and concatenated, giving 16 values per position. They are appended after the 27 shape channels of the same window, so each position has $[\texttt{avg}\,(6),\ \texttt{fce}\,(21),\ \text{one-hot}\,(16)] = 43$ channels. Because consecutive windows overlap by 3 bases, every internal base appears in up to 4 windows, at a different offset in each.
+\item \textbf{One-hot only} (set (d), \texttt{shape=0}): the shape block is omitted, giving 40 flat values or $7\times16$.
+\end{itemize}
+
+\emph{Worked example.} For the tetramer window GATA:
+\[
+\mathrm{G}\,(0,0,1,0)\ \|\ \mathrm{A}\,(1,0,0,0)\ \|\ \mathrm{T}\,(0,0,0,1)\ \|\ \mathrm{A}\,(1,0,0,0)\ =\ (0,0,1,0,\ 1,0,0,0,\ 0,0,0,1,\ 1,0,0,0).
+\]
+In a windowed model these 16 values are concatenated with the 6 \texttt{avg} values (SHIFT, SLIDE, RISE, TILT, ROLL, TWIST) and the 21 \texttt{fce} values that the shape tables give for GATA.
+
+\emph{Combination with shape.} Shape and one-hot are concatenated, never multiplied. Like all features, the one-hot channels are then z-scored with the training-fold mean and sd. A channel $x\in\{0,1\}$ with frequency $p$ becomes $(x-p)/\sqrt{p(1-p)}$, so an absent base gets a non-zero (negative) value. The shape features are a deterministic function of the tetramer and hence of its 16 one-hot values. A model can therefore read sequence identity directly (one-hot) and/or use the physical summary (shape). This redundancy is what the one-hot-only benchmark (d) and the LRP analysis test.
 
 \subsubsection{Feature tensors per model}
 \begin{itemize}

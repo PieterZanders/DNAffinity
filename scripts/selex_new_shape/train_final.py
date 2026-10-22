@@ -53,4 +53,6 @@ for k, (tr, va) in enumerate(GroupKFold(5).split(P, P, d.group.values[P])):
         t_fit = time.perf_counter() - t1  # includes predicting all rows; inference timed separately below
         t2 = time.perf_counter(); _ = m.predict(Z[T]); t_inf = (time.perf_counter() - t2) / len(T) * 1000
         np.savez(f, t_feat=t_feat, t_fit=t_fit, t_inf1k=t_inf, n_rows=len(d), pred=pred, tr=tr, va=va, te=T, y=y, best=getattr(m, 'best_iteration_', -1) if hist is None else m.best_epoch)
+        if os.environ.get('SAVEW') and hist is not None:  # best (early-stopped) weights + standardisation for LRP
+            torch.save(dict(state=m.net.state_dict(), mu=mu, sd=sd, ym=ym, ys=ys, input_shape=Z.shape[1:]), D / f'fold{k}_seed{seed}.pt')
         print(model, k, seed, 'test r2', round(r2_score(y[T], pred[T]), 3), flush=True)
