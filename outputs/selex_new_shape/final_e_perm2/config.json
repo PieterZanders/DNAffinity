@@ -1,0 +1,1 @@
+{"tf": "log", "mc": 10, "mode": "perstrand", "ks": "4", "props": "avg+fce", "onehot": 0, "shape": 1, "std": 1}
