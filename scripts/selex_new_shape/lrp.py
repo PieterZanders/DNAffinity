@@ -10,7 +10,6 @@ from lib import *
 from dnaffinity.models.cnn1d import CNN1D
 from dnaffinity.models.dfn import RegressionCV, FeedForward
 torch.set_num_threads(4)
-od, model, shape = sys.argv[1], sys.argv[2], bool(int(sys.argv[3]))
 EPS, GAM = 1e-2, 0.25
 
 def fold_bn(conv, bn):
@@ -71,19 +70,24 @@ def dfn_lrp(net, x, rule):
 def gxi(net, x):
     x = x.clone().requires_grad_(True); net(x).sum().backward(); return (x * x.grad).detach()
 
-c = json.load(open(OUT / od / 'config.json')); d = load_labels(10, 'perstrand')
-full = pd.read_csv(ROOT / 'data/selex/Gata4/4.txt', sep='\t'); allg = full.Kmer.map(canonical).values; tg = set(allg[split(allg)])
-T = np.where(d.group.isin(tg).values)[0]; seqs = list(d.seq.values[T]); y = np.log(d.aff.values[T])
-X = (windowed if model == 'cnn1d' else flat_feats)(seqs, tuple(int(k) for k in c['ks']), tuple(c['props'].split('+')), bool(c['onehot']), bool(c['shape']))
-RS, RG, RZ, OUTS, CONS = [], [], [], [], []
-for f in sorted(glob.glob(str(OUT / od / model / 'fold*_seed*.pt'))):
-    ck = torch.load(f, weights_only=False); Z = torch.tensor((X - ck['mu']) / ck['sd'], dtype=torch.float32)
-    if model == 'cnn1d': net = CNN1D(Z.shape[2], 64, 2, 3, 'avg', 0.2, normalization=False); fn = cnn_lrp
-    else: net = RegressionCV(FeedForward([Z.shape[1], 256, 128, 64, 1], dropout=0.2), normalization=False); fn = dfn_lrp
-    net.load_state_dict(ck['state']); net.eval()
-    with torch.no_grad(): ref = net(Z).ravel()
-    R, o = fn(net, Z, 'comp'); R0, _ = fn(net, Z, 'zero'); G = gxi(net, Z)
-    assert torch.allclose(o, ref, atol=1e-4), 'LRP forward mismatch (BN folding)'
-    RS.append(R.numpy()); RZ.append(R0.numpy()); RG.append(G.numpy()); OUTS.append(o.numpy())
-    print(f, 'conservation sum(R)/f:', np.median(R.reshape(len(R), -1).sum(1).numpy() / o.numpy()), flush=True)
-np.savez_compressed(OUT / od / f'lrp_{model}.npz', R=np.array(RS), R0=np.array(RZ), G=np.array(RG), out=np.array(OUTS), X=X, seqs=np.array(seqs), y=y)
+def main(od, model):
+    c = json.load(open(OUT / od / 'config.json')); d = load_labels(10, 'perstrand')
+    full = pd.read_csv(ROOT / 'data/selex/Gata4/4.txt', sep='\t'); allg = full.Kmer.map(canonical).values; tg = set(allg[split(allg)])
+    T = np.where(d.group.isin(tg).values)[0]; seqs = list(d.seq.values[T]); y = np.log(d.aff.values[T])
+    X = (windowed if model == 'cnn1d' else flat_feats)(seqs, tuple(int(k) for k in c['ks']), tuple(c['props'].split('+')), bool(c['onehot']), bool(c['shape']))
+    RS, RG, RZ, OUTS, CONS = [], [], [], [], []
+    for f in sorted(glob.glob(str(OUT / od / model / 'fold*_seed*.pt'))):
+        ck = torch.load(f, weights_only=False); Z = torch.tensor((X - ck['mu']) / ck['sd'], dtype=torch.float32)
+        if model == 'cnn1d': net = CNN1D(Z.shape[2], 64, 2, 3, 'avg', 0.2, normalization=False); fn = cnn_lrp
+        else: net = RegressionCV(FeedForward([Z.shape[1], 256, 128, 64, 1], dropout=0.2), normalization=False); fn = dfn_lrp
+        net.load_state_dict(ck['state']); net.eval()
+        with torch.no_grad(): ref = net(Z).ravel()
+        R, o = fn(net, Z, 'comp'); R0, _ = fn(net, Z, 'zero'); G = gxi(net, Z)
+        assert torch.allclose(o, ref, atol=1e-4), 'LRP forward mismatch (BN folding)'
+        RS.append(R.numpy()); RZ.append(R0.numpy()); RG.append(G.numpy()); OUTS.append(o.numpy())
+        print(f, 'conservation sum(R)/f:', np.median(R.reshape(len(R), -1).sum(1).numpy() / o.numpy()), flush=True)
+    np.savez_compressed(OUT / od / f'lrp_{model}.npz', R=np.array(RS), R0=np.array(RZ), G=np.array(RG), out=np.array(OUTS), X=X, seqs=np.array(seqs), y=y)
+
+
+if __name__ == '__main__':
+    main(sys.argv[1], sys.argv[2])  # argv[3] (shape flag) is unused
