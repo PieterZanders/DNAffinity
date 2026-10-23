@@ -1,0 +1,49 @@
+\subsection{Can MD-derived features alone predict affinity?}\label{sec:mdaim}
+This is the central question of the study. Sets (e)--(g) use only the MD tables, with no explicit sequence input.
+
+\paragraph{MD-only vs.\ one-hot-only vs.\ MD + one-hot.}
+\begin{table}[H]\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\caption{Tetramer MD shape only (set e) compared with one-hot only (d) and MD + one-hot (a). Test $R^2$ (mean over runs); (e) with sd, Pearson, Spearman and averaged-runs $R^2$. $\Delta$ = (e) $-$ (d); ratio = (e)/(d).}
+\begin{tabular}{lcccccccc}\toprule
+Model & (d) one-hot & (a) MD+1H & (e) MD only & $\Delta$(e$-$d) & ratio & Pearson (e) & Spearman (e) & Avg-runs (e)\\\midrule
+Linear & 0.380 & 0.471 & 0.416$\pm$0.001 & +0.036 & 1.10 & 0.645 & 0.649 & 0.418 \\
+Ridge & 0.380 & 0.470 & 0.415$\pm$0.001 & +0.035 & 1.09 & 0.645 & 0.648 & 0.417 \\
+SVR & 0.581 & 0.598 & 0.547$\pm$0.007 & -0.034 & 0.94 & 0.741 & 0.734 & 0.555 \\
+RF & 0.536 & 0.572 & 0.562$\pm$0.005 & +0.027 & 1.05 & 0.754 & 0.734 & 0.571 \\
+DFN & 0.635 & 0.644 & 0.606$\pm$0.011 & -0.029 & 0.95 & 0.779 & 0.764 & 0.638 \\
+CNN1D & 0.739 & 0.736 & 0.700$\pm$0.009 & -0.039 & 0.95 & 0.838 & 0.821 & 0.751 \\
+CNNAttention & 0.729 & 0.725 & 0.683$\pm$0.013 & -0.046 & 0.94 & 0.829 & 0.811 & 0.742 \\
+Transformer & 0.679 & 0.685 & 0.649$\pm$0.010 & -0.030 & 0.96 & 0.806 & 0.790 & 0.675 \\
+\bottomrule\end{tabular}\label{tab:mdverdict}\end{table}
+\begin{itemize}
+\item \textbf{MD alone predicts affinity well.} The best MD-only model is CNN1D with test $R^2=0.700\pm0.009$ (Pearson 0.838, Spearman 0.821; 0.751 when its 15 runs are averaged). This is 95\% of the one-hot-only value (0.739) and of the MD + one-hot value (0.736). CNNAttention reaches 0.683, the Transformer 0.649, DFN 0.606, RF 0.562, SVR 0.547 and Linear/Ridge 0.416/0.415.
+\item \textbf{MD-only is not better than sequence for deep models.} For SVR, DFN, CNN1D, CNNAttention and the Transformer, (e) is 0.03--0.05 $R^2$ below (d). The converse holds for the two models that cannot learn their own sequence code: Linear/Ridge gain $+0.036$ and RF $+0.027$ from MD over one-hot. For those models the MD numbers act as useful engineered, non-linear features of the sequence.
+\item \textbf{MD + one-hot adds nothing for the CNNs.} (a) vs.\ (d): 0.736 vs.\ 0.739 for CNN1D, 0.725 vs.\ 0.729 for CNNAttention, so combining does not beat sequence alone for the best models.
+\item \textbf{Which MD set.} Tetramer MD (e) is the best MD-only set for every non-linear model. Hexamer MD only (f) is the worst (CNN1D 0.553, DFN 0.529, Linear 0.314). Tetramer+hexamer MD (g) is below (e) for the NNs (CNN1D 0.672) and above it only for Linear/Ridge (0.443/0.441 vs.\ 0.416/0.415). The hexamer tables provide only 5 windows, so the two outermost tetramer windows of the 10-mer have no hexamer information.
+\end{itemize}
+
+\paragraph{How much sequence identity is in the MD features?}
+The 256 tetramer vectors have full rank 27 and are well separated (smallest pairwise distance 0.75 in z-units, median 7.4), so a model can in principle use them as labels of the tetramer. Nearest-neighbour recovery of all 256 tetramers stays at 100\% after adding noise of sd 0.1. A linear classifier on the 27 values predicts the two \emph{central} bases of a tetramer with 100\% cross-validated accuracy, and the two \emph{outer} bases with 75.8\% (chance 25\%). The shape tables therefore encode nearly all sequence information, and the models are free to use them as identity codes.
+
+\paragraph{Control: real MD values vs.\ a random lookup table.}
+\begin{table}[H]\centering\scriptsize\setlength{\tabcolsep}{2.4pt}
+\caption{Permuted-table control on set (e). Test $R^2$ (mean$\pm$sd over runs) with the real MD table and with two random reassignments of the MD rows to tetramers (perm.\ 1, 2); difference of the real table to the mean of the two permutations; train $-$ test gap; averaged-runs $R^2$ and its difference; one-hot only (d) for reference.}
+\begin{tabular}{l|ccc|c|cc|ccc|c}\toprule
+& \multicolumn{3}{c|}{test $R^2$} & $\Delta$ & \multicolumn{2}{c|}{gap} & \multicolumn{3}{c|}{avg-runs $R^2$} & (d) \\
+Model & real MD & perm.\ 1 & perm.\ 2 & real $-$ perm. & real & perm.\ (mean) & real & perm.\ (mean) & $\Delta$ & test $R^2$\\\midrule
+RF & 0.562$\pm$0.005 & 0.505$\pm$0.006 & 0.516$\pm$0.005 & +0.052 & 0.317 & 0.369 & 0.571 & 0.519 & +0.052 & 0.536 \\
+DFN & 0.606$\pm$0.011 & 0.472$\pm$0.014 & 0.470$\pm$0.010 & +0.135 & 0.201 & 0.361 & 0.638 & 0.526 & +0.112 & 0.635 \\
+CNN1D & 0.700$\pm$0.009 & 0.675$\pm$0.010 & 0.681$\pm$0.010 & +0.022 & 0.167 & 0.227 & 0.751 & 0.747 & +0.005 & 0.739 \\
+\bottomrule\end{tabular}\label{tab:perm}\end{table}
+The permuted table has the same dimension, value distribution and identifying power as the real one, but the values are unrelated to the tetramer's physics. Result:
+\begin{itemize}
+\item \textbf{DFN:} real 0.606 vs.\ 0.472/0.470 for the permuted tables ($+0.135$). The real MD values are worth far more than an arbitrary code, plausibly because physically similar tetramers get similar inputs, which a feedforward network can exploit as smooth features (we did not test this explanation directly).
+\item \textbf{RF:} real 0.562 vs.\ 0.505/0.516 ($+0.052$).
+\item \textbf{CNN1D:} real 0.700 vs.\ 0.675/0.681 ($+0.022$, about two sd over runs). With a random table, the CNN still reaches 0.678, because its first layer can learn any tetramer-wise lookup, as it does from one-hot. The averaged-runs difference is only $+0.005$ (0.751 vs.\ 0.744/0.750).
+\item The permuted tables also overfit more (gap 0.23--0.37 vs.\ 0.17--0.32 for the real table, with the largest difference for DFN: 0.361 vs.\ 0.201).
+\end{itemize}
+
+\begin{figure}[H]\centering\includegraphics[width=.95\textwidth]{bench/compare_truth_pred.png}
+\caption{True vs.\ predicted log affinity on the held-out test set (mean prediction of all runs of a model, so the $R^2$ is the averaged-runs value) for Ridge, RF, DFN and CNN1D: tetramer MD + one-hot (a), one-hot only (d), tetramer MD only (e) and the permuted-table control (RF, DFN, CNN1D).}\label{fig:cmp}\end{figure}
+
+\paragraph{Verdict.} Good affinity prediction is possible from MD-derived data alone: with tetramer shape and stiffness only, CNN1D reaches test $R^2=0.700$ (Pearson 0.84), at most 0.04--0.05 below one-hot sequence encoding and MD + one-hot. The MD tables, however, are a complete tetramer lookup that identifies the sequence (central bases 100\%, outer bases 76\% linearly decodable), and they never beat the sequence encoding for the deep models. The permuted-table control shows that the physical content of the values is not irrelevant, since it is worth $+0.135$ for DFN, $+0.052$ for RF and $+0.022$ for CNN1D, but for the best model (CNN1D) about 97\% of the MD-only $R^2$ (0.678 of 0.700) is reachable with an arbitrary injective code of the tetramer. So the data show that MD-derived features \emph{contain} enough information to predict Gata4 affinities, and that the sequence information they carry is the main source of this. They do not show that the networks rely on physical deformability beyond what a sequence code provides. For models that cannot learn their own code (Linear, RF, DFN), the real MD values are a clearly better feature set than one-hot or random codes.

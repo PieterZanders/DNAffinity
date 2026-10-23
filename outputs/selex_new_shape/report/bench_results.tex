@@ -1,0 +1,33 @@
+\subsection{Summary: with vs.\ without one-hot}
+Tables~\ref{tab:fs_tetramer}--\ref{tab:fs_tetrahexaMD} give every metric. Table~\ref{tab:bench} puts the test $R^2$ of the shape sets side by side with and without one-hot (a vs.\ e, b vs.\ f, c vs.\ g), plus one-hot only (d).
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{4pt}
+\caption{Test $R^2$ (mean over runs) per model and feature set. Columns: shape + one-hot (a, b, c) next to the same shape only (e, f, g), then one-hot only (d). Bold: best set per model.}
+\begin{tabular}{l|cc|cc|cc|c}\toprule
+& \multicolumn{2}{c|}{tetramer} & \multicolumn{2}{c|}{hexamer} & \multicolumn{2}{c|}{tetra+hexa} & one-hot\\
+Model & (a) +1H & (e) MD only & (b) +1H & (f) MD only & (c) +1H & (g) MD only & (d)\\\midrule
+Linear & 0.471 & 0.416 & 0.430 & 0.314 & \textbf{0.484} & 0.443 & 0.380 \\
+Ridge & 0.470 & 0.415 & 0.431 & 0.314 & \textbf{0.483} & 0.441 & 0.380 \\
+SVR & \textbf{0.598} & 0.547 & 0.586 & 0.462 & 0.588 & 0.536 & 0.581 \\
+RF & \textbf{0.572} & 0.562 & 0.549 & 0.521 & 0.563 & 0.553 & 0.536 \\
+DFN & \textbf{0.644} & 0.606 & 0.633 & 0.529 & 0.641 & 0.601 & 0.635 \\
+CNN1D & 0.736 & 0.700 & 0.714 & 0.553 & 0.723 & 0.672 & \textbf{0.739} \\
+CNNAttention & 0.725 & 0.683 & 0.702 & 0.553 & 0.709 & 0.664 & \textbf{0.729} \\
+Transformer & \textbf{0.685} & 0.649 & 0.673 & 0.563 & 0.681 & 0.644 & 0.679 \\
+\bottomrule\end{tabular}\label{tab:bench}\end{table}
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{4pt}
+\caption{Averaged-runs test $R^2$ (mean prediction of all runs of a model) for the same sets and models as Table~\ref{tab:bench}.}
+\begin{tabular}{l|cc|cc|cc|c}\toprule
+& \multicolumn{2}{c|}{tetramer} & \multicolumn{2}{c|}{hexamer} & \multicolumn{2}{c|}{tetra+hexa} & one-hot\\
+Model & (a) +1H & (e) MD only & (b) +1H & (f) MD only & (c) +1H & (g) MD only & (d)\\\midrule
+Linear & 0.473 & 0.418 & 0.431 & 0.316 & \textbf{0.487} & 0.446 & 0.380 \\
+Ridge & 0.472 & 0.417 & 0.432 & 0.315 & \textbf{0.486} & 0.444 & 0.380 \\
+SVR & \textbf{0.606} & 0.555 & 0.594 & 0.469 & 0.596 & 0.544 & 0.590 \\
+RF & \textbf{0.581} & 0.571 & 0.558 & 0.532 & 0.572 & 0.563 & 0.541 \\
+DFN & \textbf{0.673} & 0.638 & 0.663 & 0.565 & 0.670 & 0.633 & 0.663 \\
+CNN1D & 0.788 & 0.751 & 0.765 & 0.619 & 0.773 & 0.729 & \textbf{0.789} \\
+CNNAttention & 0.778 & 0.742 & 0.758 & 0.613 & 0.763 & 0.725 & \textbf{0.785} \\
+Transformer & \textbf{0.709} & 0.675 & 0.699 & 0.590 & 0.707 & 0.671 & 0.702 \\
+\bottomrule\end{tabular}\label{tab:benchavg}\end{table}
+
+\begin{figure}[H]\centering\includegraphics[width=\textwidth]{bench/grouped_bar.png}
+\caption{Test $R^2$ (mean$\pm$sd over runs) per model and feature set. Solid bars: shape + one-hot and one-hot only; hatched bars: the same shape without one-hot.}\label{fig:gbar}\end{figure}

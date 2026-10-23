@@ -1,0 +1,11 @@
+{
+ "n": 256,
+ "rank": 27,
+ "min_pair_dist": 0.7482330829729453,
+ "median_pair_dist": 7.400486004962161,
+ "logreg_acc_pos1": 0.7578431372549019,
+ "logreg_acc_pos2": 1.0,
+ "logreg_acc_pos3": 1.0,
+ "logreg_acc_pos4": 0.7579185520361991,
+ "nn_identity_noise0.1": 1.0
+}

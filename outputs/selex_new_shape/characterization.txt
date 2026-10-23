@@ -1,0 +1,20 @@
+k=4: avg (256, 6), fce (256, 36), NaN avg 0 fce 0, all kmers True
+  fce symmetric max|M-MT|=0.00e+00; min eig 0.00599
+  avg RC: corr per col (x vs sign*rc(x)) [0.998 1.    1.    0.999 1.    1.   ]; max abs diff 1.1
+  avg col mean/sd: {0: {'mean': -0.0, 'std': 0.335}, 1: {'mean': -0.41, 'std': 0.322}, 2: {'mean': 3.32, 'std': 0.13}, 3: {'mean': -0.002, 'std': 1.74}, 4: {'mean': 2.378, 'std': 3.066}, 5: {'mean': 33.984, 'std': 2.389}}
+  vs data/input avg corr per col: [0.833 0.969 0.958 0.85  0.982 0.942]
+  vs data/input fce: corr diag [0.926 0.962 0.9   0.972 0.949 0.912]
+k=6: avg (4096, 6), fce (4096, 36), NaN avg 0 fce 0, all kmers True
+  fce symmetric max|M-MT|=0.00e+00; min eig 0.00578
+  avg RC: corr per col (x vs sign*rc(x)) [0.999 1.    1.    1.    1.    1.   ]; max abs diff 0.785
+  avg col mean/sd: {0: {'mean': 0.0, 'std': 0.349}, 1: {'mean': -0.413, 'std': 0.328}, 2: {'mean': 3.319, 'std': 0.135}, 3: {'mean': 0.0, 'std': 1.784}, 4: {'mean': 2.39, 'std': 3.095}, 5: {'mean': 33.946, 'std': 2.466}}
+  hexamer avg vs central tetramer avg corr: [0.959 0.978 0.958 0.971 0.99  0.964]
+4.txt: 126624 rows of 1048576 10-mers (12.1%); count==1 52.5%; >=10 13100
+  Aff/(obs/exp)^.25: mean 0.1720 sd 2.49e-16
+  SE*sqrt(n)/Aff: median 1.414
+  fwd vs RC log-aff r (both counts>=1, n=17376): 0.417
+  fwd vs RC log-aff r (both counts>=10, n=2329): 0.412
+  fwd vs RC log-aff r (both counts>=30, n=732): 0.425
+SELEX_test: 5511 rows, len [10], VALUE range 7.4e-05-1, WEIGHT uniq [ 1 10]
+  in 4.txt: 8.4%; VALUE==4.txt Aff for overlap: False
+  RC in 4.txt: 8.5%; counts of test kmers: {'count': 5511.0, 'mean': 0.4, 'std': 4.3, 'min': 0.0, '25%': 0.0, '50%': 0.0, '75%': 0.0, 'max': 221.0}

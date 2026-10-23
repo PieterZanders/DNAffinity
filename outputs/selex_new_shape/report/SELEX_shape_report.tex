@@ -1,0 +1,178 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{tikz}\usetikzlibrary{positioning,arrows.meta}
+\usepackage{graphicx,booktabs,amsmath,caption,subcaption,hyperref,float}
+\graphicspath{{../plots/}}
+\title{Can molecular-dynamics DNA shape alone predict Gata4 HT-SELEX affinities?\\ New tetramer/hexamer MD tables, preprocessing, model comparison and LRP}
+\author{Pieter Zanders}
+\date{23 October 2026}
+\begin{document}\sloppy
+\maketitle
+\begin{abstract}
+\textbf{Aim.} We ask whether good prediction of protein--DNA affinity is possible from molecular-dynamics (MD) simulation data alone, using newly generated tetramer and hexamer tables of average helical parameters (\texttt{avg}) and stiffness matrices (\texttt{fce}) to predict Gata4 HT-SELEX 10-mer affinities. \textbf{Data and protocol.} Labels come from the SELEX affinity table (\texttt{4.txt}), in which affinity is exactly $0.172\,(\mathrm{obs}/\mathrm{exp})^{1/4}$, only 12.1\% of 10-mers are present and 52.5\% of entries have a single count. A preprocessing ablation under a leakage-free scheme (5-fold CV grouping each $k$-mer with its reverse complement, plus a fixed 10\% held-out test set) selected log-affinity labels, a count threshold of $\geq$10 and per-strand labels (gain of 0.15--0.17 CV $R^2$ over merged labels). Eight regressors (Linear, Ridge, SVR, random forest, DFN, CNN1D, CNNAttention, Transformer) were benchmarked on seven feature sets: tetramer, hexamer or tetramer+hexamer MD shape, each with one-hot (a--c) and \emph{without any one-hot} (e--g), and one-hot only (d). \textbf{Results.} MD-only prediction works: with tetramer MD only, CNN1D reaches a held-out test $R^2=0.700\pm0.009$ (Pearson 0.838, Spearman 0.821; 0.751 averaged over its 15 runs), against 0.739 for one-hot only and 0.736 for MD + one-hot, i.e.\ 95\% of the sequence-based value. CNNAttention (0.683), the Transformer (0.649), DFN (0.606), RF (0.562), SVR (0.547) and Linear/Ridge (0.416) follow. For the linear models and RF, MD features beat one-hot ($+0.036$ and $+0.027$); for the other models MD-only is 0.03--0.05 below one-hot. Hexamer MD alone is worst (CNN1D 0.553). The MD tables are tetramer lookups that identify the sequence (central bases decoded linearly with 100\% accuracy, outer bases 76\%). A control that randomly reassigns the MD rows to tetramers shows that the real values are worth $+0.135$ $R^2$ for DFN, $+0.052$ for RF and $+0.022$ for CNN1D, so most of the CNN's MD-only accuracy (0.678 of 0.700) is attainable with any identity code. Layer-wise relevance propagation shows that the MD-only models rely mostly on \texttt{fce} coupling terms (57--64\%), with TILT--ROLL, SLIDE--TILT and ROLL--TWIST among the largest, and RISE the clearest positive effect on strong binders. The strongest binders carry an ETS-like ACTTCCGG motif, not GATA; \texttt{4.txt} shows no GATA enrichment. The supplied \texttt{SELEX\_test.txt} is not consistent with \texttt{4.txt} and was not used. \textbf{Verdict.} MD data alone predict affinity well, but the evidence for physical rather than identity-code use is strong only for models that cannot learn their own code (DFN, RF, linear).
+\end{abstract}
+
+\section{Introduction}
+Transcription factors (TFs) recognise their genomic targets through direct base readout and through the sequence-dependent three-dimensional shape of DNA (``shape readout'') \cite{rohs2009}. High-throughput SELEX (HT-SELEX) enriches DNA ligands bound by a TF over successive selection rounds and sequences them, giving large-scale relative affinities for $k$-mers \cite{jolma2013}. Physics-based descriptors from atomistic molecular dynamics (MD) summarise the local structure and flexibility of DNA. Examples are average base-step helical parameters (shift, slide, rise, tilt, roll, twist) and stiffness (force-constant) matrices. Such descriptors can complement or replace the raw sequence as model input, and they give an interpretable view of affinity determinants. DNAffinity builds regressors on such features. Here we test new tetramer- and hexamer-level MD shape tables on Gata4 HT-SELEX data.
+
+\paragraph{Aim.} The central question is whether \emph{good affinity prediction can be achieved from MD simulation data only}. MD-derived shape and flexibility are physics-based features: they encode what atomistic simulation says about how a DNA sequence bends, twists and fluctuates, without any explicit sequence input. If they predict affinity as well as the sequence itself, they could provide an interpretable, transferable description of DNA recognition. A caveat is that every MD table is a lookup indexed by $k$-mer sequence, so MD features can in principle simply act as a sequence identifier. We therefore ask: (i) how well do MD-only features (sets e--g) predict compared with one-hot only (d) and MD + one-hot (a--c); (ii) how much sequence information is recoverable from the MD features; (iii) whether models use the tables as identity codes or as physical descriptors (permuted-table control); and (iv) which MD parameters drive the predictions (LRP). Secondary questions are which preprocessing is optimal and how classical and deep models compare.
+
+\section{Methods}
+\subsection{Affinity labels}
+Labels are taken from the SELEX package output for Gata4 (\texttt{data/selex/Gata4/4.txt}). It has 126{,}624 10-mers with observed and expected (Markov-model) counts, affinity and SE. We verified that $\mathrm{Affinity}=0.172\,(\mathrm{obs}/\mathrm{exp})^{0.25}$ to machine precision (sd of the ratio $2.5\times10^{-16}$) and that $\mathrm{SE}\sqrt{n}/\mathrm{Aff}$ has median $1.414\approx\sqrt2$. The table is zero-truncated: only 12.1\% of the $4^{10}$ possible 10-mers appear. 52.5\% of entries have count 1, and 13{,}100 have count $\geq$10. Because the SE is about $\sqrt2\,\mathrm{Aff}/\sqrt n$, labels with low counts are very noisy.
+
+\subsection{Shape features}
+The new tables \texttt{data/selex/tetramer/\{avg,fce\}\_tetramer.dat} and \texttt{data/selex/hexamer/\{avg,fce\}\_hexamer.dat} give, for every tetramer (256) and hexamer (4096), six average helical parameters (\texttt{avg}) and a flattened $6\times6$ stiffness matrix (\texttt{fce}). The matrices are exactly symmetric and positive definite (minimum eigenvalue $\approx 0.006$), so we keep the 21 unique upper-triangle entries. A 10-mer is represented by 7 overlapping tetramer windows (and 5 hexamer windows). Hexamer $j$ is aligned to its central tetramer window $j{+}1$ and zero-padded at the ends for windowed models. Optional one-hot input adds the 16 one-hot values of the bases in each tetramer window. Flat models use the concatenated windows; windowed models (CNN1D, CNNAttention, Transformer) use a $7\times d$ tensor.
+
+\input{pipeline.tex}
+\input{featuresets.tex}
+
+\subsection{Validation protocol}
+Every $k$-mer is grouped with its reverse complement. A fixed random 10\% of groups (seed 20, drawn over all groups in \texttt{4.txt}) forms the held-out test set. The remaining pool is split by \texttt{GroupKFold} into 5 folds. Inside each training fold, neural networks hold out a random 10\% for early stopping. For every fold model we report train-fold, validation-fold and test metrics. Metrics are $R^2$, Pearson and Spearman correlations on log affinity, given as mean$\pm$sd over folds (and seeds), plus the train--test $R^2$ gap. The ``averaged-runs'' test $R^2$ is the $R^2$ of the mean prediction of all fold/seed models of one type.
+
+\subsection{Preprocessing ablation}
+Starting from a base configuration (log label, count $\geq$10, per-strand labels, tetramer avg+fce, standardisation), we changed one factor at a time and scored a random forest (300 trees, min leaf 3, max features 0.33) and a CNN1D (one seed). The factors were: label transform (raw vs log), count threshold (1, 3, 10, 30), merged vs per-strand labels, feature tables (tetramer, hexamer, both), \texttt{avg}/\texttt{fce}/both, one-hot $\pm$ shape, and standardisation. Merged labels average the measured strands per canonical $k$-mer and emit both orientations (reverse-complement augmentation). Per-strand labels keep each measured orientation as its own row. To make configurations comparable, every one was scored on the same rows: held-out-fold rows with a measured per-strand label and count $\geq$10. The CNN was not run at thresholds 1 and 3 because of CPU cost.
+
+\input{models.tex}
+\input{lrp_methods.tex}
+
+\section{Results}
+\subsection{Characterisation of the new shape tables}
+The tables are complete (all $k$-mers, no missing values). The \texttt{avg} files are tab-separated with a \texttt{SEQUENCE} header, and the \texttt{fce} files are space-separated. Reverse-complement symmetry holds: correlation $\geq0.998$ between a $k$-mer and its reverse complement, with shift and tilt sign-flipped. The new tetramer values differ from the earlier \texttt{data/input} tables. Correlations per average parameter are 0.83 (shift), 0.97, 0.96, 0.85 (tilt), 0.98 and 0.94, and 0.90--0.97 for the stiffness diagonal. Hexamer averages correlate 0.96--0.99 with those of their central tetramer, so they are largely redundant. In \texttt{4.txt}, log affinities of the forward and reverse-complement orientations of the same 10-mer correlate only $r=0.417$ (17{,}376 pairs). The correlation stays at 0.412 and 0.425 when both counts are $\geq$10 or $\geq$30, so the asymmetry is not explained by counting noise.
+
+\subsection{Preprocessing ablation}
+\begin{table}[H]\centering\small
+\caption{Preprocessing ablation: 5-fold grouped CV $R^2$ on log affinity, evaluated on per-strand count$\geq$10 rows (mean$\pm$sd over folds where given). Base: log, count$\geq$10, per-strand, tetramer avg+fce, standardised.}
+\begin{tabular}{lcc}\toprule
+Change vs.\ base & RF & CNN1D \\\midrule
+Base & 0.588$\pm$0.015 & 0.692$\pm$0.018\\
+Raw label & 0.579 & 0.691\\
+Count $\geq$1 / $\geq$3 / $\geq$30 & $-1.449$ / 0.044 / $-0.227$ & -- / -- / 0.158\\
+Merged labels + RC augmentation & 0.438 & 0.520\\
+Hexamer only / tetramer+hexamer & 0.546 / 0.579 & 0.578 / 0.672\\
+avg only / fce only & 0.560 / 0.586 & 0.661 / 0.680\\
+No standardisation & 0.588 & 0.653\\
++ one-hot & \textbf{0.599$\pm$0.014} & 0.738$\pm$0.022\\
+One-hot only (no shape) & 0.563 & \textbf{0.739$\pm$0.018}\\
++ one-hot, tetramer+hexamer & 0.589 & 0.721\\\bottomrule
+\end{tabular}\label{tab:abl}\end{table}
+The low and high count thresholds give strongly negative or near-zero $R^2$. Their Pearson correlations stay at 0.67--0.76, so the loss comes mainly from biased predicted levels: low-count labels shrink predictions, and a threshold of 30 removes low-affinity training examples. Per-strand labels beat merged labels by 0.15--0.17. The chosen configuration is log label, count $\geq$10, per-strand, tetramer avg+fce plus one-hot, standardised.
+
+\subsection{Model comparison per feature set}
+Tables~\ref{tab:fs_tetramer}--\ref{tab:fs_tetrahexaMD} give the full metrics of every model for each of the seven feature sets: (a)--(c) with one-hot, (d) one-hot only, (e)--(g) MD shape only. Set (a), tetramer shape + one-hot, is the preprocessing chosen in the ablation. Learning curves of all neural-network runs for every set are in Appendix~\ref{app:curves}.
+
+\input{tab_fs_full.tex}
+\begin{table}[H]\centering\small
+\caption{Training dynamics of the neural networks with feature set (a) (means over runs; MSE on standardised log affinity).}
+\begin{tabular}{lcccc}\toprule
+Model & Best epoch & Epochs run & Final train MSE & Best val MSE\\\midrule
+DFN & 44.3 & 70.3 & 0.186 & 0.331 \\
+CNN1D & 27.1 & 53.1 & 0.068 & 0.261 \\
+CNNAttention & 21.6 & 47.6 & 0.055 & 0.266 \\
+Transformer & 111.6 & 137.6 & 0.293 & 0.291 \\
+\bottomrule\end{tabular}\label{tab:curves}\end{table}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_linear.png}
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_ridge.png}
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_svr.png}
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_rf.png}
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_dfn.png}
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_cnn1d.png}
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_cnnattention.png}
+\includegraphics[width=.49\textwidth]{bench/scatter_tetramer_transformer.png}
+\caption{Ground truth vs.\ prediction (fold 0, seed 0) for each model with feature set (a) on its training fold (left panel) and on the held-out test set (right panel), with $R^2$.}\label{fig:scatter}\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.49\textwidth]{dfn_learning_curves.png}
+\includegraphics[width=.49\textwidth]{cnn1d_learning_curves.png}
+\includegraphics[width=.49\textwidth]{cnnattention_learning_curves.png}
+\includegraphics[width=.49\textwidth]{transformer_learning_curves.png}
+\caption{Learning curves of all neural-network runs with feature set (a) (blue: training loss, red: early-stopping validation loss).}\label{fig:curves}\end{figure}
+
+\input{bench_results.tex}
+\input{md_aim.tex}
+\input{timing.tex}
+\input{lrp_results.tex}
+
+\section{Discussion}
+\paragraph{Strand asymmetry.} The two orientations of the same 10-mer correlate only $r\approx0.42$ in log affinity, and this does not improve when only high-count pairs are kept (0.425 at count $\geq$30). The asymmetry is therefore systematic, not counting noise. A likely cause is the orientation-dependent expected counts of the Markov background model, possibly combined with position or flank effects in the selection library. Averaging the two strands destroys this signal. Per-strand labels with reverse-complement-grouped CV improved CV $R^2$ by 0.15 (RF) and 0.17 (CNN1D) over merged labels.
+
+\paragraph{Count threshold.} Counts below 10 add many labels whose relative SE is $\sqrt{2/n}$, i.e.\ $>45\%$. A threshold of 30 removes most low-affinity $k$-mers and biases predictions upwards on the shared evaluation rows. A threshold of 10 was the best trade-off. The log transform was marginally better than raw affinity.
+
+\paragraph{Can MD data alone predict affinity? (the aim).} Yes, to a large extent, but the result needs a qualification (Section~\ref{sec:mdaim}).
+\begin{itemize}
+\item \textbf{How good.} Tetramer MD only gives CNN1D a test $R^2$ of 0.700 (Pearson 0.838), 95\% of one-hot only (0.739) and of MD + one-hot (0.736). Every model with MD only is within 0.03--0.05 of its one-hot value, except Linear/Ridge and RF, which are better with MD ($+0.036$, $+0.027$). Tetramer MD is the best MD-only set (hexamer 0.553, tetramer+hexamer 0.672 for CNN1D).
+\item \textbf{How much sequence is in the MD tables.} Nearly all: the 256 tetramer vectors are separable (rank 27, minimum distance 0.75 in z-units), and a linear classifier decodes the two central bases with 100\% accuracy and the outer bases with 75.8\%. A model can therefore use the table as a label of the tetramer, and a convolutional network whose first layer is a free lookup is expected to do exactly that.
+\item \textbf{Identity code or physical descriptor.} Both. Randomly reassigning the MD rows to the tetramers lowers $R^2$ by 0.135 for DFN, 0.052 for RF and 0.022 for CNN1D (0.005 for the averaged CNN prediction). The real values therefore contain more than identity. This advantage is large for models that cannot learn a per-tetramer code (DFN, RF) and small for CNN1D, which with a random table already reaches 0.678. For the deep convolutional models the MD tables are mostly a (good) identity code, and MD never improves on sequence. For Linear/Ridge, RF and DFN MD helps compared with one-hot or random codes.
+\item \textbf{Limitations of the control.} Only the tetramer set was permuted, with 2 permutations and 3 models; Linear, SVR, the attention models and the hexamer sets were not run. The control cannot prove that physics is used, since any physical meaning is itself a function of the tetramer. It does show that the real ordering of the values adds measurable information.
+\end{itemize}
+
+\paragraph{Value of the shape features.} The one-hot-only set (d), run with the full final protocol, isolates the contribution of shape (Table~\ref{tab:bench}). Adding tetramer shape (a) to one-hot helps exactly the models that lack a positional, sequence-aware inductive bias:
+\begin{itemize}
+\item Linear/Ridge: 0.380 $\to$ 0.471/0.470 ($+0.09$), the largest gain. A shape value is a fixed non-linear function of four bases, which an additive model cannot build from one-hot itself.
+\item RF: 0.536 $\to$ 0.572 ($+0.036$); its train $R^2$ also rises (0.745 $\to$ 0.884), as the continuous shape covariates offer many more split points.
+\item SVR: 0.581 $\to$ 0.598 ($+0.017$); DFN: 0.635 $\to$ 0.644 ($+0.009$); Transformer: 0.679 $\to$ 0.685 ($+0.006$).
+\item CNN1D: 0.739 (one-hot) vs.\ 0.736 (a); CNNAttention 0.729 vs.\ 0.725. The differences are within one sd over runs (0.009--0.016), so shape adds nothing for the convolutional models: with 16 one-hot channels per tetramer window they can learn any per-tetramer lookup, including the shape tables, themselves. Averaged-runs $R^2$ agrees (CNN1D 0.789 vs.\ 0.788; CNNAttention 0.785 vs.\ 0.778).
+\end{itemize}
+This confirms the ablation (CNN 0.739 vs.\ 0.738; RF 0.563 vs.\ 0.599) under the final protocol with 3 seeds. In the ablation, shape alone was informative (CNN 0.692 without one-hot) and \texttt{fce} carried more signal than \texttt{avg}.
+
+\paragraph{Model comparison and overfitting.}
+\begin{itemize}
+\item Linear and ridge regression underfit (train $R^2$ 0.50, gap 0.03 with set (a); 0.40 and 0.02 with one-hot only).
+\item Random forest memorised the noisy labels (train 0.884, gap 0.31 with set (a)).
+\item SVR generalised better (gap 0.15) and was the best classical model (0.598).
+\item The convolutional models were best on every feature set. Their validation loss reached its minimum early (best epoch $\approx$22--27) while the training loss kept falling (final train MSE 0.05--0.07 vs.\ best validation MSE 0.26--0.27). This is overfitting, controlled by early stopping: validation and test $R^2$ agree closely (CNN1D 0.735 vs.\ 0.736), so there is no evidence of leakage.
+\item The Transformer had the smallest gap (0.077--0.089) and nearly equal train and validation MSE (0.293 vs.\ 0.291). It trained longer (best epoch $\approx$112) and stayed underfit relative to the CNNs.
+\item Averaging the runs of one model over folds and seeds helped the NNs substantially (CNN1D 0.736 $\to$ 0.788, CNNAttention 0.725 $\to$ 0.778, DFN 0.644 $\to$ 0.673), and the non-NN models only slightly (+0.002--0.009).
+\end{itemize}
+
+\paragraph{MD-only feature sets (e--g).} Tetramer MD (e) is best for every non-linear model, as with one-hot (a vs.\ b, c). Hexamer MD only (f) is the worst (CNN1D 0.553, DFN 0.529, Linear 0.314), because the 5 hexamer windows leave the outer tetramer windows without information and, without one-hot, nothing compensates. The combination (g) is below (e) for SVR, RF, DFN and all NNs, and above it only for Linear/Ridge (0.443/0.441 vs.\ 0.416/0.415). In the convolutional models, adding one-hot to MD helps by 0.036 (CNN1D, 0.700 $\to$ 0.736), but removing MD from MD + one-hot costs nothing (0.739).
+
+\paragraph{Which shape feature set?} Among the shape sets, tetramer (a) gave the highest test $R^2$ for every non-linear model (Table~\ref{tab:bench}):
+\begin{itemize}
+\item CNN1D: 0.736 vs.\ 0.714 (hexamer) and 0.723 (both);
+\item CNNAttention: 0.725 / 0.702 / 0.709;
+\item Transformer: 0.685 / 0.673 / 0.681;
+\item DFN: 0.644 / 0.633 / 0.641;
+\item SVR: 0.598 / 0.586 / 0.588;
+\item RF: 0.572 / 0.549 / 0.563.
+\end{itemize}
+Only the additive models preferred the combined set (Linear 0.484 and Ridge 0.483 vs.\ 0.471/0.470 with tetramers). Hexamers were the worst shape set for every model; for the CNNs, DFN and Transformer they were even below one-hot only. There are three reasons:
+\begin{enumerate}
+\item Hexamer averages are 96--99\% correlated with their central tetramer, so they add little new information.
+\item A 10-mer has only 5 hexamer windows against 7 tetramer windows, so the outermost base steps are not described (for windowed models the end positions are zero-padded).
+\item The combined set doubles the shape channels (364-dimensional flat input, 70 channels per position) without adding signal, which slightly increases variance for the flexible models.
+\end{enumerate}
+The additive models gain about 0.013 from the combination because a hexamer value acts as a fixed non-linear (context-dependent) feature of 6 bases. The differences between feature sets (0.01--0.02 for non-linear models) are small compared with the differences between models, but they are consistent across models and comparable to or larger than the sd over runs.
+
+\paragraph{Computational cost.} Ridge trains in under 1\,s per run. SVR, RF, DFN and the CNNs take about 0.3--1.5\,min per run under the parallel load, and the Transformer about 2--5.5\,min. Feature building takes under 1\,s in all cases. Inference is $\leq$0.3\,s per 1{,}000 sequences for all models except SVR ($\approx$3--4\,s with shape, 0.5\,s with one-hot only), whose cost scales with the number of support vectors and the input dimension. Dropping shape makes the classical models much cheaper (SVR 58.6 $\to$ 10.6\,s, RF 42.6 $\to$ 2.3\,s per run), whereas NN training time barely changes (CNN1D 50.0 vs.\ 43.6\,s). CNN1D on one-hot only therefore gives the best accuracy at moderate cost (Figure~\ref{fig:time}). MD-only models are cheaper than shape + one-hot for the classical models (SVR 30.5\,s and RF 24.2\,s per run for (e), vs.\ 58.6 and 42.6\,s for (a)) and similar for the NNs (CNN1D 52.3\,s, CNNAttention 62.8\,s, Transformer 150.6\,s for (e); Table~\ref{tab:time2}). The Transformer hexamer runs (mean 330\,s) overlapped with the heaviest parallel load, so part of that difference reflects contention.
+
+\input{lrp_discussion.tex}
+
+\paragraph{SELEX\_test.txt mismatch.} Only 8.4\% of the 5{,}511 10-mers in \texttt{SELEX\_test.txt} appear in \texttt{4.txt}. On the 462 shared $k$-mers its values are uncorrelated with the \texttt{4.txt} affinities (Pearson of logs $-0.03$, Spearman $-0.06$). Its scale is different (max 1.0, weights 1 or 10). It probably comes from another experiment or processing, so it was not used as a test set.
+
+\paragraph{Limitations.} The ablation used a single seed and one-factor-at-a-time changes. We did not test de-duplication of shifted motif overlaps, or similarity-based grouping beyond reverse complements, so overlapping $k$-mers sharing a core motif can still occur on both sides of a split. Hyperparameters were not tuned per model. The only test data come from the same SELEX experiment.
+
+\section{Conclusion}
+\textbf{Answer to the aim.} Good affinity prediction \emph{is} possible from MD simulation data alone: tetramer MD shape and stiffness tables, with no sequence input, give CNN1D a held-out test $R^2=0.700\pm0.009$ (Pearson 0.838, Spearman 0.821; 0.751 averaged over runs), compared with 0.739 for one-hot only and 0.736 for MD + one-hot. MD-only is thus within 0.04 $R^2$ (95\%) of the sequence-based result, and better than one-hot for Linear/Ridge and RF. Hexamer tables alone are clearly worse (0.553), and combining tetramer and hexamer MD does not help the NNs (0.672). The MD tables identify the tetramer (middle bases decoded with 100\%, outer bases with 76\% accuracy), and replacing the real values by a random lookup of the same size costs 0.135 $R^2$ for DFN, 0.052 for RF and only 0.022 for CNN1D. So the MD tables carry real information beyond identity, which models without their own sequence code exploit, whereas the best (CNN) models extract mostly sequence identity from them. LRP on the MD-only models points at \texttt{fce} coupling terms (57--64\% of relevance; TILT--ROLL, SLIDE--TILT and ROLL--TWIST among the largest) and RISE as the most positive parameter for strong binders, with the caveat that credit on correlated, sequence-determined features is not proof of physical readout.
+
+
+The new MD shape tables are complete, internally consistent and differ measurably from the earlier tetramer tables. For Gata4 HT-SELEX the optimal preprocessing is log affinity, count $\geq$10, per-strand labels, tetramer avg+fce plus one-hot, and standardisation, evaluated with reverse-complement-grouped CV. With this setup CNN1D reaches a held-out test $R^2$ of 0.736 (0.788 when its runs are averaged) and is the best of the eight models, ahead of CNNAttention (0.725), the Transformer (0.685), DFN (0.644), SVR (0.598), RF (0.572) and Linear/Ridge (0.47). The feature-set benchmark (a--d) shows:
+\begin{itemize}
+\item Shape features are redundant for the convolutional networks: one-hot only gives the same accuracy (CNN1D 0.739, CNNAttention 0.729) at slightly lower cost.
+\item Shape features clearly help models without a positional sequence bias: Linear/Ridge $+0.09$, RF $+0.036$, SVR $+0.017$, DFN $+0.009$ over one-hot only.
+\item Tetramer tables are the best shape set for every non-linear model; hexamers alone are consistently worst, and combining them with tetramers helps only the linear models (+0.013), consistent with their near-redundancy with the central tetramer.
+\end{itemize}
+CNN1D is the best accuracy/cost trade-off (about 45--50\,s per run on one CPU thread). LRP on DFN and CNN1D shows that the networks use one-hot and the \texttt{fce} coupling terms most, and that their relevance on the strongest binders falls on an ETS-like ACTTCCGG/CCGGAAGT motif. There is no GATA core: \texttt{4.txt} has no GATA enrichment at count $\geq$10, which calls the identity of the selected protein into question. The main open issues are this, the strong strand asymmetry of the SELEX labels and the lack of an independent test set consistent with \texttt{4.txt}.
+
+\input{appendix.tex}
+\clearpage
+\begin{thebibliography}{99}
+\bibitem{jolma2013} A.~Jolma \emph{et al.}, DNA-binding specificities of human transcription factors, \emph{Cell} 152, 327--339 (2013).
+\bibitem{bach2015} S.~Bach \emph{et al.}, On pixel-wise explanations for non-linear classifier decisions by layer-wise relevance propagation, \emph{PLoS ONE} 10, e0130140 (2015).
+\bibitem{montavon2019} G.~Montavon \emph{et al.}, Layer-wise relevance propagation: an overview, in \emph{Explainable AI}, LNCS 11700, Springer (2019).
+\bibitem{ancona2018} M.~Ancona \emph{et al.}, Towards better understanding of gradient-based attribution methods for deep neural networks, \emph{ICLR} (2018).
+\bibitem{rohs2009} R.~Rohs \emph{et al.}, The role of DNA shape in protein--DNA recognition, \emph{Nature} 461, 1248--1253 (2009).
+\end{thebibliography}
+\end{document}

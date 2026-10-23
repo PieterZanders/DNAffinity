@@ -1,0 +1,107 @@
+\subsection{Models}\label{sec:models}
+The repository models are used through their \texttt{dnaffinity.models} classes. The architectures below are taken from that code (repository \texttt{PieterZanders/DNAffinity}, branch \texttt{deep-learning}). Parameter counts are for our $229$-feature / $7\times43$ inputs.
+
+\paragraph{Shared PyTorch training loop} (\texttt{torch\_base.TorchRegressor}).
+\begin{itemize}
+\item AdamW optimiser, MSE loss (Huber optional) and gradient-norm clipping at 5.
+\item ReduceLROnPlateau (factor 0.5, patience $\lfloor\text{patience}/3\rfloor$).
+\item Early stopping on the validation loss, with the best weights restored.
+\item Shuffled mini-batches; batches of size 1 are skipped because of BatchNorm.
+\item Our settings: batch size 64, at most 300 epochs, patience 25, weight decay $10^{-2}$, 3 seeds (0, 1, 2) per fold.
+\end{itemize}
+
+\subsubsection{Linear regression}
+\texttt{dnaffinity.models.Linear} wraps scikit-learn \texttt{LinearRegression} (ordinary least squares, no penalty).
+\begin{itemize}
+\item \emph{Pros:} convex, deterministic and fast. The coefficients can be read directly.
+\item \emph{Cons:} it cannot represent interactions or non-linear dependence on shape.
+\item \emph{Biological relevance:} on the one-hot block it is an additive, position-independent model, equivalent to a position weight matrix (PWM) on log affinity. On the shape block it is an additive model of base-step geometry and stiffness.
+\item \emph{Observed:} it underfits (train $R^2$ 0.50, test 0.47, gap 0.03). Additivity explains about half of the variance of log affinity.
+\end{itemize}
+
+\subsubsection{Ridge regression}
+\texttt{dnaffinity.models.Ridge} wraps scikit-learn \texttt{Ridge} (L2 penalty). The repository default is $\alpha=1$; we used $\alpha=10$.
+\begin{itemize}
+\item \emph{Pros:} the penalty stabilises the strongly collinear shape features (overlapping windows, correlated parameters).
+\item \emph{Cons:} same additive limit as linear regression.
+\item \emph{Observed:} practically identical to linear regression (test 0.470). With 11.7k rows and 229 features the variance of OLS is already small, so the limitation is bias, not variance.
+\end{itemize}
+
+\subsubsection{Support vector regression}
+\texttt{dnaffinity.models.SVR} wraps scikit-learn \texttt{SVR} with the repository defaults: RBF kernel, $C=1$, $\varepsilon=0.1$, $\gamma=\text{`scale'}$, on standardised inputs and targets.
+\begin{itemize}
+\item \emph{Pros:} a smooth non-linear kernel model that captures interactions implicitly and is robust thanks to the $\varepsilon$-insensitive loss.
+\item \emph{Cons:} cost grows between quadratically and cubically with the number of samples. It is not interpretable, and the isotropic RBF kernel treats all 229 features alike.
+\item \emph{Biological relevance:} similarity in kernel space means sequences with similar shape and base profiles get similar affinity, a nearest-neighbour view of the binding landscape.
+\item \emph{Observed:} test 0.598, gap 0.146, better than RF.
+\end{itemize}
+
+\subsubsection{Random forest}
+\texttt{dnaffinity.models.RandomForest} wraps scikit-learn \texttt{RandomForestRegressor} (repository defaults: 200 trees, \texttt{max\_features}=1.0). We used 500 trees, \texttt{min\_samples\_leaf}=3 and \texttt{max\_features}=0.33.
+\begin{itemize}
+\item \emph{Pros:} non-parametric and indifferent to feature scale. It gives feature importances that can rank shape parameters per window.
+\item \emph{Cons:} axis-aligned splits approximate smooth effects poorly. Deep trees memorise noisy labels.
+\item \emph{Biological relevance:} threshold rules on single shape parameters (e.g.\ ``roll at step 4 above $x$'') are directly readable as indirect-readout hypotheses \cite{rohs2009}.
+\item \emph{Observed:} largest gap (train 0.884, test 0.572). It is also the model that benefited most from shape on top of one-hot in the ablation (0.563 $\to$ 0.599), because the shape tables give trees ready-made smooth physical covariates.
+\end{itemize}
+
+\subsubsection{DFN (deep feedforward network)}
+\texttt{dfn.DFN} builds \texttt{FeedForward}: \texttt{nn.Linear} layers with \texttt{ReLU} and \texttt{Dropout} after every hidden layer and no activation on the output. It is wrapped in \texttt{RegressionCV}, which adds an optional input \texttt{LayerNorm} (disabled here). The repository default layers are \texttt{[64,32,1]} (and \texttt{[256,128,64,32,1]} with lr $10^{-4}$ for SELEX in \texttt{common.py}). We used \texttt{[256,128,64,1]} (229$\to$256$\to$128$\to$64$\to$1, 100{,}097 parameters), dropout 0.2 and lr $3\times10^{-4}$.
+\begin{itemize}
+\item \emph{Pros:} a universal approximator on the flat vector that can learn any interaction.
+\item \emph{Cons:} no positional inductive bias (a motif shifted by one window is a new pattern), so it needs more data and overfits easily.
+\item \emph{Observed:} test 0.644, gap 0.176, best epoch 44 of 70, the best flat model.
+\end{itemize}
+
+\subsubsection{CNN1D}
+\texttt{cnn1d.CNN1DRegressor} builds \texttt{CNN1D} (60{,}481 parameters):
+\begin{itemize}
+\item optional input \texttt{LayerNorm} (off);
+\item stem \texttt{Conv1d}(43$\to$64, kernel 3, padding 1) + \texttt{BatchNorm1d} + \texttt{ReLU};
+\item 2 \texttt{ResidualConvBlock}s, each Conv1d(64,64,3)--BN--ReLU--Conv1d(64,64,3)--BN, a skip connection, then ReLU;
+\item global average pooling over the 7 positions;
+\item \texttt{MLPHead}: Linear(64$\to$32)--ReLU--Dropout--Linear(32$\to$1).
+\end{itemize}
+We used the repository defaults (hidden 64, 2 blocks, kernel 3, average pooling) with dropout 0.2 and lr $10^{-3}$.
+\begin{itemize}
+\item \emph{Pros:} weight sharing gives translation equivariance, so the same filter detects a feature at every position. Capacity is moderate.
+\item \emph{Cons:} the receptive field is limited by depth (here the 2 blocks plus stem cover the whole 7-window input). Pooling discards absolute position.
+\item \emph{Biological relevance:} first-layer filters over one-hot channels act like PWMs/motif detectors, and stacked convolutions combine adjacent sub-motifs. Pooling encodes the idea that a site can sit at any offset in the 10-mer, which matters here because the top $k$-mers are shifted overlaps of the same motif.
+\item \emph{Observed:} best single model (test 0.736, 0.788 for averaged runs). It overfits after epoch $\approx$27 (final train MSE 0.068 vs.\ best validation 0.261), which early stopping controls. Shape channels were redundant given one-hot: 7 windows with 16 one-hot channels already determine the tetramer, so the network can learn any per-tetramer lookup itself.
+\end{itemize}
+
+\subsubsection{CNNAttention}
+\texttt{cnn\_attention.CNNAttentionRegressor} uses the same \texttt{ConvBackbone} as CNN1D, followed by \texttt{num\_attn\_layers}=1 \texttt{nn.MultiheadAttention} layer (embedding 64, 4 heads, dropout as configured) with a residual connection and \texttt{LayerNorm}, then global average pooling and the same \texttt{MLPHead} (77{,}249 parameters; repository defaults otherwise).
+\begin{itemize}
+\item \emph{Pros:} attention can couple distant positions, beyond the convolutional receptive field, and its weights can be inspected.
+\item \emph{Cons:} more parameters, and little extra range on a length-7 input.
+\item \emph{Biological relevance:} pairwise attention can represent dependencies between non-adjacent positions (dinucleotide/epistatic effects, spacing of half-sites), which a PWM ignores.
+\item \emph{Observed:} test 0.725, gap 0.155, slightly below CNN1D. For 10-mers the convolutions already see the whole sequence, so attention adds capacity but no new range.
+\end{itemize}
+
+\subsubsection{Transformer}
+\texttt{transformer.TransformerRegressor} builds the following (19{,}073 parameters):
+\begin{itemize}
+\item optional input \texttt{LayerNorm} (off) and a \texttt{Linear} projection 43$\to d_\mathrm{model}$;
+\item sinusoidal positional encoding and a learnable CLS token prepended;
+\item \texttt{nn.TransformerEncoder} with pre-norm layers (\texttt{norm\_first=True}, GELU activation);
+\item pooling over the CLS token or the mean of the position tokens;
+\item an \texttt{MLPHead} as above.
+\end{itemize}
+We used the \texttt{common.py} defaults for this model: $d_\mathrm{model}=32$, 2 layers, 4 heads, feed-forward 64, mean pooling, lr $3\times10^{-4}$ with 5 warm-up epochs. The code comment notes that CLS pooling at lr $10^{-3}$ collapsed on SELEX. We used dropout 0.2.
+\begin{itemize}
+\item \emph{Pros:} global, content-dependent interactions between all positions, with explicit position information.
+\item \emph{Cons:} weak locality bias (no built-in notion that adjacent bases matter most). It needs much data and careful optimisation, and was the slowest to train here.
+\item \emph{Biological relevance:} like attention above, it can model position-specific coupling and orientation-dependent context. Explicit positional encoding can in principle use the absolute-position and strand effects behind the label asymmetry.
+\item \emph{Observed:} test 0.685, smallest gap (0.077), train MSE about equal to validation MSE (0.293 vs.\ 0.291), best epoch $\approx$112. It underfits relative to the CNNs at this size, consistent with its weaker inductive bias on about 10k training rows.
+\end{itemize}
+
+\subsubsection{Averaged runs}
+For each model type, the ``averaged-runs'' prediction is the mean of the test-set predictions of all its fold$\times$seed models (5 for non-NN models, 15 for NNs). Models of different types are never combined.
+\begin{itemize}
+\item \emph{Pros:} averaging reduces the variance from seeds and data subsets. This is the main reason CNN1D rises from 0.736 to 0.788.
+\item \emph{Cons:} the training cost is multiplied by the number of runs, and so is the inference cost when deployed.
+\end{itemize}
+
+\subsubsection{Shape features and biophysics}
+The \texttt{avg} and \texttt{fce} channels encode indirect readout: the intrinsic geometry and deformability of each base step, which affect the energetic cost of the DNA conformation a TF binds \cite{rohs2009}. They help models without a positional, sequence-aware inductive bias (RF: +0.036 over one-hot alone). For CNN1D they are a deterministic function of the one-hot input and gave no gain. All shape tables are reverse-complement symmetric (shift and tilt change sign), so they cannot by themselves explain the observed strand asymmetry of the labels. Only orientation-aware inputs (per-strand rows, position-specific channels) can represent it.

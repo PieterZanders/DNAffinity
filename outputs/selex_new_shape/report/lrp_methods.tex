@@ -1,0 +1,43 @@
+\subsection{Feature importance with Layer-wise Relevance Propagation}\label{sec:lrpm}
+\paragraph{Theory.} LRP \cite{bach2015,montavon2019} redistributes a model output $f(x)$ backwards, layer by layer, onto the input features. Each neuron $k$ passes its relevance $R_k$ to its inputs $j$ in proportion to their contributions $z_{jk}=a_j w_{jk}$:
+\[
+R_j=\sum_k \frac{a_j\,\rho(w_{jk})}{\epsilon\,\mathrm{sign}(z_k)+\sum_{j'} a_{j'}\rho(w_{j'k})+\rho(b_k)}\,R_k .
+\]
+The plain rule (LRP-0) uses $\rho(w)=w$ and $\epsilon=0$. LRP-$\epsilon$ adds a stabiliser $\epsilon$. LRP-$\gamma$ uses $\rho(w)=w+\gamma w^+$, which favours positive contributions and gives less noisy maps in deep conv layers. When biases are zero and $\epsilon\to0$, relevance is conserved: $\sum_j R_j=f(x)$. Relevance assigned to biases and to $\epsilon$ is lost, so conservation is only approximate. Relevance is signed: positive relevance pushes the prediction up, negative pushes it down.
+
+\paragraph{Implementation and rules.} We wrote a manual LRP for the exact repository architectures (\texttt{scripts/selex\_new\_shape/lrp.py}). Every layer is covered explicitly; Captum or zennit was not needed.
+\begin{itemize}
+\item \textbf{DFN} (\texttt{Linear}, \texttt{ReLU}, \texttt{Dropout}): all \texttt{Linear} layers use LRP-$\epsilon$ ($\epsilon=0.01$). ReLU passes relevance unchanged, and Dropout is the identity in evaluation mode.
+\item \textbf{CNN1D} (\texttt{Conv1d}, \texttt{BatchNorm1d}, \texttt{ReLU}, residual addition, global average pooling, MLP head):
+  \begin{itemize}
+  \item Each \texttt{BatchNorm1d} is folded into its preceding \texttt{Conv1d}, giving $w'=w\,\gamma_\mathrm{bn}/\sigma$ and $b'=(b-\mu)\gamma_\mathrm{bn}/\sigma+\beta$. This is exact in evaluation mode; the folded network reproduces the predictions to $10^{-4}$, which is asserted in the code.
+  \item The residual addition $o+h$ and the global average pool are linear, so relevance is split in proportion to their summands ($\epsilon$-rule).
+  \item The hidden convolutions inside the residual blocks use LRP-$\gamma$ ($\gamma=0.25$). Their inputs are post-ReLU and therefore non-negative.
+  \item The input convolution uses LRP-$\epsilon$. The inputs are z-scored and can be negative, so LRP-$\gamma$ and $z^+$ rules are not applicable there.
+  \item The head \texttt{Linear} layers use LRP-$\epsilon$.
+  \end{itemize}
+\item No layer was unsupported. The optional input \texttt{LayerNorm} is disabled in our models (\texttt{normalization=False}). If it were enabled, it would need a dedicated rule, e.g.\ treating the normalisation as constant.
+\end{itemize}
+Relevance explains the model output in standardised log-affinity units ($f(x)$ before de-standardisation), relative to an all-zero input. The all-zero input corresponds to the training-fold mean feature vector.
+
+\paragraph{Checks.}
+\begin{itemize}
+\item \textbf{Correctness.} For piecewise-linear networks, LRP-0 equals gradient$\times$input \cite{ancona2018}. We therefore also ran LRP-0 and compared it with autograd gradient$\times$input.
+\item \textbf{Conservation.} We report, over test rows, the correlation and slope between $\sum_j R_j$ and $f(x)$, and the median ratio $\sum_j R_j/f(x)$ for $|f(x)|>0.5$.
+\end{itemize}
+
+\paragraph{Weights and data.} The final protocol did not save weights, so DFN and CNN1D were retrained with the identical code, configuration and seeds, now saving the early-stopped best weights and the per-fold standardisation. This covers all 5 folds $\times$ 3 seeds for set (a), DFN and CNN1D, for set (d), CNN1D only, and for the shape-only set (e), DFN and CNN1D. The shape-only models were trained with the final protocol and weights were saved in the same run (\texttt{SAVEW=1}), so (e) uses the very models of the benchmark.
+\begin{itemize}
+\item The retrained DFN (a), CNN1D (d), and the shape-only runs reproduced the benchmark exactly (test $R^2$ $0.644\pm0.011$ and $0.739\pm0.010$).
+\item CNN1D (a) differed slightly ($0.737\pm0.009$ vs.\ $0.736\pm0.012$) because of non-deterministic CPU threading in the original runs.
+\end{itemize}
+Relevance was computed on the 1{,}335 held-out test rows for each of the 15 models of a column and averaged over models per row.
+
+\paragraph{Aggregation.}
+\begin{enumerate}
+\item \textbf{Feature type:} one-hot; each \texttt{avg} parameter (SHIFT, SLIDE, RISE, TILT, ROLL, TWIST, the column names of \texttt{avg\_tetramer.dat}); \texttt{fce} diagonal (6 terms); and \texttt{fce} off-diagonal (15 terms), each summed over windows.
+\item \textbf{Position:} one-hot relevance per base position (1--10) and shape relevance per tetramer window (1--7). For CNN1D, the one-hot channel of base $k$ in window $i$ is credited to base position $i{+}k$.
+\item \textbf{Base$\times$position maps:} the relevance of each nucleotide channel at each position, averaged over the top-50 test $k$-mers by affinity and over all test rows. We also draw sequence logos for the top-6 test $k$-mers, with letter height equal to the summed relevance of the 4 channels at that position. All 4 channels are included because z-scored absent-base channels are non-zero.
+\item \textbf{Shape-only models (e): projected base-level map.} Without one-hot channels there is no input feature that belongs to a single base, so base-level maps are \emph{derived}: the summed relevance of each tetramer window $i$ (all 27 shape channels) is divided equally over its 4 bases $i{+}1..i{+}4$ and placed on the channel of the base that is actually present in that window of the $k$-mer. Position and heat/logo plots of (e) are therefore a spread-out version of the window relevance. They allow comparison with (a) and (d) but carry no information beyond window relevance, and the ends of the 10-mer (covered by one window) get little by construction.
+\item \textbf{Signed vs.\ absolute:} absolute shares $\overline{|R|}_g/\sum_g\overline{|R|}_g$ measure how much a group is used. Signed means over all rows and over the top-100 $k$-mers show the direction of its effect.
+\end{enumerate}
