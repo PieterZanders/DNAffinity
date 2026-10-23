@@ -1,4 +1,4 @@
-\clearpage\appendix\section{Per-feature-set diagnostic plots}
+\clearpage\appendix\section{Per-feature-set diagnostic plots}\label{app:curves}
 \begin{figure}[H]\centering
 \includegraphics[width=.24\textwidth]{bench/scatter_tetramer_linear.png}
 \includegraphics[width=.24\textwidth]{bench/scatter_tetramer_ridge.png}
@@ -63,3 +63,66 @@
 \includegraphics[width=.24\textwidth]{bench/curves_one-hot_cnnattention.png}
 \includegraphics[width=.24\textwidth]{bench/curves_one-hot_transformer.png}
 \caption{Learning curves (blue: train, red: early-stopping validation; 15 runs each) for the one-hot only feature set.}\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_linear.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_ridge.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_svr.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_rf.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_cnnattention.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetramer-MD_transformer.png}
+\caption{Ground truth vs.\ prediction (fold 0, seed 0; left half of each panel: train, right half: test) for the tetramer MD-only (set e) feature set.}\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/curves_tetramer-MD_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/curves_tetramer-MD_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/curves_tetramer-MD_cnnattention.png}
+\includegraphics[width=.24\textwidth]{bench/curves_tetramer-MD_transformer.png}
+\caption{Learning curves (blue: train, red: early-stopping validation; 15 runs each) for the tetramer MD-only (set e) feature set.}\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_linear.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_ridge.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_svr.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_rf.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_cnnattention.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_hexamer-MD_transformer.png}
+\caption{Ground truth vs.\ prediction (fold 0, seed 0; left half of each panel: train, right half: test) for the hexamer MD-only (set f) feature set.}\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/curves_hexamer-MD_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/curves_hexamer-MD_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/curves_hexamer-MD_cnnattention.png}
+\includegraphics[width=.24\textwidth]{bench/curves_hexamer-MD_transformer.png}
+\caption{Learning curves (blue: train, red: early-stopping validation; 15 runs each) for the hexamer MD-only (set f) feature set.}\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_linear.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_ridge.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_svr.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_rf.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_cnnattention.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_tetra_hexa-MD_transformer.png}
+\caption{Ground truth vs.\ prediction (fold 0, seed 0; left half of each panel: train, right half: test) for the tetramer+hexamer MD-only (set g) feature set.}\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/curves_tetra_hexa-MD_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/curves_tetra_hexa-MD_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/curves_tetra_hexa-MD_cnnattention.png}
+\includegraphics[width=.24\textwidth]{bench/curves_tetra_hexa-MD_transformer.png}
+\caption{Learning curves (blue: train, red: early-stopping validation; 15 runs each) for the tetramer+hexamer MD-only (set g) feature set.}\end{figure}
+\section{Permuted-table control plots}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/scatter_perm1_rf.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_perm1_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_perm1_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_perm2_rf.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_perm2_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/scatter_perm2_cnn1d.png}
+\caption{Ground truth vs.\ prediction (fold 0, seed 0) for RF, DFN and CNN1D on set (e) with the MD rows randomly reassigned to tetramers (first row: permutation 1; second row: permutation 2).}\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.24\textwidth]{bench/curves_perm1_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/curves_perm1_cnn1d.png}
+\includegraphics[width=.24\textwidth]{bench/curves_perm2_dfn.png}
+\includegraphics[width=.24\textwidth]{bench/curves_perm2_cnn1d.png}
+\caption{Learning curves for DFN and CNN1D with permuted MD tables (permutation 1: first two panels; permutation 2: last two).}\end{figure}

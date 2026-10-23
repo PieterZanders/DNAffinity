@@ -1,50 +1,33 @@
-\subsection{Feature-set benchmark: summary}
-\begin{table}[H]\centering\small
-\caption{Test $R^2$ summary per model and feature set (full metrics in Tables~\ref{tab:fs_tetramer}--\ref{tab:fs_onehot}). Left block: mean over runs; right block: averaged-runs $R^2$. (a)--(c) are shape + one-hot; (d) is one-hot only. Bold: best feature set per model (mean test $R^2$).}
-\begin{tabular}{l|cccc|cccc}\toprule
-& \multicolumn{4}{c|}{Test $R^2$ (mean over runs)} & \multicolumn{4}{c}{Averaged-runs test $R^2$}\\
-Model & (a) & (b) & (c) & (d) & (a) & (b) & (c) & (d)\\\midrule
-Linear & 0.471 & 0.430 & \textbf{0.484} & 0.380 & 0.473 & 0.431 & 0.487 & 0.380 \\
-Ridge & 0.470 & 0.431 & \textbf{0.483} & 0.380 & 0.472 & 0.432 & 0.486 & 0.380 \\
-SVR & \textbf{0.598} & 0.586 & 0.588 & 0.581 & 0.606 & 0.594 & 0.596 & 0.590 \\
-RF & \textbf{0.572} & 0.549 & 0.563 & 0.536 & 0.581 & 0.558 & 0.572 & 0.541 \\
-DFN & \textbf{0.644} & 0.633 & 0.641 & 0.635 & 0.673 & 0.663 & 0.670 & 0.663 \\
-CNN1D & 0.736 & 0.714 & 0.723 & \textbf{0.739} & 0.788 & 0.765 & 0.773 & 0.789 \\
-CNNAttention & 0.725 & 0.702 & 0.709 & \textbf{0.729} & 0.778 & 0.758 & 0.763 & 0.785 \\
-Transformer & \textbf{0.685} & 0.673 & 0.681 & 0.679 & 0.709 & 0.699 & 0.707 & 0.702 \\
+\subsection{Summary: with vs.\ without one-hot}
+Tables~\ref{tab:fs_tetramer}--\ref{tab:fs_tetrahexaMD} give every metric. Table~\ref{tab:bench} puts the test $R^2$ of the shape sets side by side with and without one-hot (a vs.\ e, b vs.\ f, c vs.\ g), plus one-hot only (d).
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{4pt}
+\caption{Test $R^2$ (mean over runs) per model and feature set. Columns: shape + one-hot (a, b, c) next to the same shape only (e, f, g), then one-hot only (d). Bold: best set per model.}
+\begin{tabular}{l|cc|cc|cc|c}\toprule
+& \multicolumn{2}{c|}{tetramer} & \multicolumn{2}{c|}{hexamer} & \multicolumn{2}{c|}{tetra+hexa} & one-hot\\
+Model & (a) +1H & (e) MD only & (b) +1H & (f) MD only & (c) +1H & (g) MD only & (d)\\\midrule
+Linear & 0.471 & 0.416 & 0.430 & 0.314 & \textbf{0.484} & 0.443 & 0.380 \\
+Ridge & 0.470 & 0.415 & 0.431 & 0.314 & \textbf{0.483} & 0.441 & 0.380 \\
+SVR & \textbf{0.598} & 0.547 & 0.586 & 0.462 & 0.588 & 0.536 & 0.581 \\
+RF & \textbf{0.572} & 0.562 & 0.549 & 0.521 & 0.563 & 0.553 & 0.536 \\
+DFN & \textbf{0.644} & 0.606 & 0.633 & 0.529 & 0.641 & 0.601 & 0.635 \\
+CNN1D & 0.736 & 0.700 & 0.714 & 0.553 & 0.723 & 0.672 & \textbf{0.739} \\
+CNNAttention & 0.725 & 0.683 & 0.702 & 0.553 & 0.709 & 0.664 & \textbf{0.729} \\
+Transformer & \textbf{0.685} & 0.649 & 0.673 & 0.563 & 0.681 & 0.644 & 0.679 \\
 \bottomrule\end{tabular}\label{tab:bench}\end{table}
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{4pt}
+\caption{Averaged-runs test $R^2$ (mean prediction of all runs of a model) for the same sets and models as Table~\ref{tab:bench}.}
+\begin{tabular}{l|cc|cc|cc|c}\toprule
+& \multicolumn{2}{c|}{tetramer} & \multicolumn{2}{c|}{hexamer} & \multicolumn{2}{c|}{tetra+hexa} & one-hot\\
+Model & (a) +1H & (e) MD only & (b) +1H & (f) MD only & (c) +1H & (g) MD only & (d)\\\midrule
+Linear & 0.473 & 0.418 & 0.431 & 0.316 & \textbf{0.487} & 0.446 & 0.380 \\
+Ridge & 0.472 & 0.417 & 0.432 & 0.315 & \textbf{0.486} & 0.444 & 0.380 \\
+SVR & \textbf{0.606} & 0.555 & 0.594 & 0.469 & 0.596 & 0.544 & 0.590 \\
+RF & \textbf{0.581} & 0.571 & 0.558 & 0.532 & 0.572 & 0.563 & 0.541 \\
+DFN & \textbf{0.673} & 0.638 & 0.663 & 0.565 & 0.670 & 0.633 & 0.663 \\
+CNN1D & 0.788 & 0.751 & 0.765 & 0.619 & 0.773 & 0.729 & \textbf{0.789} \\
+CNNAttention & 0.778 & 0.742 & 0.758 & 0.613 & 0.763 & 0.725 & \textbf{0.785} \\
+Transformer & \textbf{0.709} & 0.675 & 0.699 & 0.590 & 0.707 & 0.671 & 0.702 \\
+\bottomrule\end{tabular}\label{tab:benchavg}\end{table}
 
 \begin{figure}[H]\centering\includegraphics[width=\textwidth]{bench/grouped_bar.png}
-\caption{Test $R^2$ (mean$\pm$sd over runs) per model and feature set.}\label{fig:gbar}\end{figure}
-
-\subsection{Processing time}
-\begin{table}[H]\centering\scriptsize\setlength{\tabcolsep}{2.5pt}
-\caption{Processing time per model and feature set: feature building for all 13{,}100 rows [s], training time per run [s] (mean$\pm$sd), and inference [s per 1{,}000 sequences; 0.00 means $<$0.005\,s]. Tetramer timings come from the re-timing runs (seed 0, 5 folds); the other sets were timed on all their runs. Hardware and threading are described in the timing subsection of the Methods.}
-\begin{tabular}{l|ccc|ccc|ccc|ccc}\toprule
-& \multicolumn{3}{c|}{(a) tetramer} & \multicolumn{3}{c|}{(b) hexamer} & \multicolumn{3}{c|}{(c) tetra+hexa} & \multicolumn{3}{c}{(d) one-hot only}\\
-Model & feat & train/run & inf/1k & feat & train/run & inf/1k & feat & train/run & inf/1k & feat & train/run & inf/1k\\\midrule
-Linear & 0.42 & 8.4$\pm$0.9 & 0.00 & 0.27 & 6.0$\pm$0.5 & 0.00 & 0.55 & 13.1$\pm$1.3 & 0.02 & 0.03 & 0.4$\pm$0.1 & 0.00 \\
-Ridge & 0.57 & 0.6$\pm$0.0 & 0.00 & 0.12 & 0.3$\pm$0.3 & 0.00 & 0.46 & 0.9$\pm$0.2 & 0.02 & 0.03 & 0.0$\pm$0.0 & 0.00 \\
-SVR & 0.39 & 58.6$\pm$7.3 & 2.98 & 0.50 & 62.1$\pm$10.0 & 3.19 & 0.20 & 84.5$\pm$19.0 & 4.00 & 0.03 & 10.6$\pm$0.8 & 0.48 \\
-RF & 0.44 & 42.6$\pm$2.5 & 0.21 & 0.12 & 46.6$\pm$3.6 & 0.29 & 0.91 & 80.6$\pm$12.5 & 0.18 & 0.03 & 2.3$\pm$0.3 & 0.10 \\
-DFN & 0.11 & 17.6$\pm$4.3 & 0.00 & 0.10 & 17.1$\pm$3.4 & 0.00 & 0.17 & 17.4$\pm$3.3 & 0.00 & 0.03 & 15.8$\pm$2.4 & 0.00 \\
-CNN1D & 0.36 & 50.0$\pm$8.1 & 0.01 & 0.47 & 49.0$\pm$5.9 & 0.01 & 0.47 & 46.5$\pm$5.9 & 0.01 & 0.19 & 43.6$\pm$5.7 & 0.01 \\
-CNNAttention & 0.35 & 55.4$\pm$8.2 & 0.06 & 0.74 & 76.2$\pm$16.3 & 0.06 & 0.49 & 55.7$\pm$10.9 & 0.04 & 0.23 & 58.2$\pm$6.1 & 0.04 \\
-Transformer & 0.34 & 134.6$\pm$22.4 & 0.02 & 0.85 & 329.5$\pm$60.6 & 0.04 & 0.51 & 131.0$\pm$29.9 & 0.02 & 0.42 & 136.1$\pm$30.3 & 0.02 \\
-\bottomrule\end{tabular}\label{tab:time}\end{table}
-
-\begin{table}[H]\centering\small
-\caption{Total training time [min] for the full protocol (5 runs for non-NN models, 15 for NNs) = mean time per run $\times$ number of runs.}
-\begin{tabular}{lcccc}\toprule Model & (a) tetramer & (b) hexamer & (c) tetra+hexa & (d) one-hot only\\\midrule
-Linear & 0.7 & 0.5 & 1.1 & 0.0 \\
-Ridge & 0.1 & 0.0 & 0.1 & 0.0 \\
-SVR & 4.9 & 5.2 & 7.0 & 0.9 \\
-RF & 3.6 & 3.9 & 6.7 & 0.2 \\
-DFN & 4.4 & 4.3 & 4.4 & 4.0 \\
-CNN1D & 12.5 & 12.2 & 11.6 & 10.9 \\
-CNNAttention & 13.9 & 19.1 & 13.9 & 14.5 \\
-Transformer & 33.7 & 82.4 & 32.7 & 34.0 \\
-\bottomrule\end{tabular}\label{tab:ttot}\end{table}
-
-\begin{figure}[H]\centering\includegraphics[width=.8\textwidth]{bench/time_vs_r2.png}
-\caption{Training time per run vs.\ test $R^2$ for every model and feature set.}\label{fig:time}\end{figure}
+\caption{Test $R^2$ (mean$\pm$sd over runs) per model and feature set. Solid bars: shape + one-hot and one-hot only; hatched bars: the same shape without one-hot.}\label{fig:gbar}\end{figure}

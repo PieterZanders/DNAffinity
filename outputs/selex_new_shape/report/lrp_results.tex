@@ -1,4 +1,5 @@
-\subsection{Feature importance (LRP)}\label{sec:lrpr}
+\subsection{Which MD parameters drive the predictions? Feature importance (LRP)}\label{sec:lrpr}
+LRP was computed for DFN and CNN1D on set (a) (shape + one-hot), CNN1D on (d) (one-hot only) and, for the MD-aim, DFN and CNN1D on (e) (tetramer MD only). Everything below uses 15 models per column (5 folds $\times$ 3 seeds), the same rules and aggregations. Table~\ref{tab:lrpcons} shows the sanity checks.
 \begin{table}[H]\centering\small
 \caption{LRP sanity checks on the test set (15 models each). Corr/slope: Pearson correlation and slope of $\sum_j R_j$ vs.\ $f(x)$. Ratio: median $\sum_j R_j/f(x)$ for $|f(x)|>0.5$. LRP-0 vs.\ G$\times$I: maximum relative deviation $\max|R^{(0)}-G{\times}I|/\max|G{\times}I|$ over runs. Corr G$\times$I: correlation of the composite LRP maps with gradient$\times$input.}
 \begin{tabular}{lcccccc}\toprule
@@ -6,59 +7,91 @@ Model (set) & Runs & Corr & Slope & Ratio & LRP-0 vs.\ G$\times$I & Corr G$\time
 DFN (a) & 15 & 0.987 & 0.759 & 0.718 & 1.3e-04 & 0.984 \\
 CNN1D (a) & 15 & 0.550 & 0.510 & 0.473 & 3.5e-02 & 0.166 \\
 CNN1D (d) & 15 & 0.557 & 0.532 & 0.502 & 3.5e-04 & 0.144 \\
+DFN (e) & 15 & 0.980 & 0.710 & 0.653 & 2.6e-05 & 0.983 \\
+CNN1D (e) & 15 & 0.568 & 0.521 & 0.514 & 1.1e-02 & 0.169 \\
 \bottomrule\end{tabular}\label{tab:lrpcons}\end{table}
-LRP-0 matched gradient$\times$input to $10^{-4}$ for DFN and CNN1D (d), and to 3.5\% for CNN1D (a), where some near-zero denominators in the residual split amplify rounding. This confirms the implementation. Conservation is close for the DFN (corr 0.987, about 72--76\% of the output recovered). For CNN1D, about half of the output is recovered and the correlation is 0.55, because a large part of the relevance is absorbed by the folded BatchNorm biases. The composite $\gamma$ rule also changes the CNN maps substantially relative to gradient$\times$input (corr 0.14--0.17), whereas they are nearly identical for the DFN (0.984).
+LRP-0 matched gradient$\times$input to $10^{-4}$ or better for the DFNs and CNN1D (d), to 1.1\% for CNN1D (e), and to 3.5\% for CNN1D (a), where some near-zero denominators in the residual split amplify rounding. This confirms the implementation. Conservation is close for the DFN (corr 0.980--0.987, 65--72\% of the output recovered by the median ratio). For CNN1D, about half of the output is recovered and the correlation is 0.55--0.57, because a large part of the relevance is absorbed by the folded BatchNorm biases. The composite $\gamma$ rule also changes the CNN maps substantially relative to gradient$\times$input (corr 0.14--0.17), whereas they are nearly identical for the DFN (0.984).
 
 \begin{table}[H]\centering\scriptsize\setlength{\tabcolsep}{3pt}
-\caption{LRP relevance per feature type (test rows, averaged over 15 models). abs: share of total $|R|$. signed: mean signed relevance over all test rows / over the top-100 test $k$-mers by affinity (standardised log-affinity units).}
-\begin{tabular}{l|ccc|ccc|ccc}\toprule
-& \multicolumn{3}{c|}{DFN (a)} & \multicolumn{3}{c|}{CNN1D (a)} & \multicolumn{3}{c}{CNN1D (d)}\\
-Feature group & abs & signed all & signed top-100 & abs & signed all & signed top-100 & abs & signed all & signed top-100\\\midrule
-one-hot & 0.347 & -0.002 & +0.331 & 0.489 & +0.072 & +0.525 & 1.000 & +0.146 & +1.063 \\
-\texttt{avg} SHIFT & 0.013 & -0.000 & -0.007 & 0.022 & -0.000 & +0.010 & -- & -- & -- \\
-\texttt{avg} SLIDE & 0.019 & +0.001 & +0.027 & 0.022 & +0.002 & +0.017 & -- & -- & -- \\
-\texttt{avg} RISE & 0.019 & +0.020 & +0.121 & 0.020 & +0.011 & +0.053 & -- & -- & -- \\
-\texttt{avg} TILT & 0.017 & -0.007 & -0.016 & 0.021 & +0.003 & +0.017 & -- & -- & -- \\
-\texttt{avg} ROLL & 0.015 & -0.012 & -0.015 & 0.017 & -0.000 & +0.005 & -- & -- & -- \\
-\texttt{avg} TWIST & 0.018 & -0.008 & +0.009 & 0.021 & +0.003 & +0.029 & -- & -- & -- \\
-\texttt{fce} diagonal & 0.136 & -0.026 & +0.078 & 0.107 & +0.007 & +0.075 & -- & -- & -- \\
-\texttt{fce} off-diagonal & 0.417 & +0.029 & +0.464 & 0.281 & +0.040 & +0.238 & -- & -- & -- \\
+\caption{Share of total absolute LRP relevance per feature type (test rows, averaged over 15 models). One-hot in (d) is the only input, hence 1.000; ``--'' = group not in the model's input.}
+\begin{tabular}{l|ccc|cc}\toprule
+& DFN (a) & CNN1D (a) & CNN1D (d) & DFN (e) & CNN1D (e)\\
+Feature group & \multicolumn{3}{c|}{with one-hot / one-hot only} & \multicolumn{2}{c}{MD only}\\\midrule
+one-hot & 0.347 & 0.489 & 1.000 & -- & -- \\
+\texttt{avg} SHIFT & 0.013 & 0.022 & -- & 0.027 & 0.049 \\
+\texttt{avg} SLIDE & 0.019 & 0.022 & -- & 0.027 & 0.037 \\
+\texttt{avg} RISE & 0.019 & 0.020 & -- & 0.030 & 0.041 \\
+\texttt{avg} TILT & 0.017 & 0.021 & -- & 0.039 & 0.058 \\
+\texttt{avg} ROLL & 0.015 & 0.017 & -- & 0.028 & 0.030 \\
+\texttt{avg} TWIST & 0.018 & 0.021 & -- & 0.030 & 0.035 \\
+\texttt{fce} diagonal & 0.136 & 0.107 & -- & 0.177 & 0.179 \\
+\texttt{fce} off-diagonal & 0.417 & 0.281 & -- & 0.642 & 0.571 \\
 \bottomrule\end{tabular}\label{tab:lrpgroups}\end{table}
+\begin{table}[H]\centering\tiny\setlength{\tabcolsep}{2.5pt}
+\caption{Mean signed LRP relevance per feature type (standardised log-affinity units): over all test rows (left five columns) and over the top-100 test $k$-mers by affinity (right five columns).}
+\begin{tabular}{l|ccccc|ccccc}\toprule
+& \multicolumn{5}{c|}{all test rows} & \multicolumn{5}{c}{top-100 $k$-mers}\\
+Feature group & DFN (a) & CNN1D (a) & CNN1D (d) & DFN (e) & CNN1D (e) & DFN (a) & CNN1D (a) & CNN1D (d) & DFN (e) & CNN1D (e)\\\midrule
+one-hot & -0.002 & +0.072 & +0.146 & -- & -- & +0.331 & +0.525 & +1.063 & -- & -- \\
+\texttt{avg} SHIFT & -0.000 & -0.000 & -- & -0.013 & -0.014 & -0.007 & +0.010 & -- & -0.042 & +0.005 \\
+\texttt{avg} SLIDE & +0.001 & +0.002 & -- & +0.002 & +0.002 & +0.027 & +0.017 & -- & +0.055 & +0.033 \\
+\texttt{avg} RISE & +0.020 & +0.011 & -- & +0.053 & +0.024 & +0.121 & +0.053 & -- & +0.216 & +0.120 \\
+\texttt{avg} TILT & -0.007 & +0.003 & -- & -0.010 & -0.002 & -0.016 & +0.017 & -- & -0.023 & +0.038 \\
+\texttt{avg} ROLL & -0.012 & -0.000 & -- & -0.018 & -0.003 & -0.015 & +0.005 & -- & -0.022 & +0.009 \\
+\texttt{avg} TWIST & -0.008 & +0.003 & -- & -0.007 & +0.002 & +0.009 & +0.029 & -- & +0.014 & +0.044 \\
+\texttt{fce} diagonal & -0.026 & +0.007 & -- & -0.025 & -0.006 & +0.078 & +0.075 & -- & +0.114 & +0.129 \\
+\texttt{fce} off-diagonal & +0.029 & +0.040 & -- & +0.062 & +0.057 & +0.464 & +0.238 & -- & +0.644 & +0.519 \\
+\bottomrule\end{tabular}\label{tab:lrpsigned}\end{table}
 
-\begin{figure}[H]\centering\includegraphics[width=.85\textwidth]{lrp/groups_abs.png}
-\caption{Share of total absolute LRP relevance per feature type, set (a).}\label{fig:lrpgroups}\end{figure}
+\begin{figure}[H]\centering\includegraphics[width=.95\textwidth]{lrp/groups_abs.png}
+\caption{Share of total absolute LRP relevance per feature type for DFN (a), CNN1D (a), CNN1D (d), DFN (e) and CNN1D (e).}\label{fig:lrpgroups}\end{figure}
+\begin{figure}[H]\centering\includegraphics[width=.95\textwidth]{lrp/groups_signed.png}
+\caption{Mean signed LRP relevance per feature type, all test rows and top-100 $k$-mers, for the same five models.}\label{fig:lrpsigned}\end{figure}
 
-\paragraph{Feature types.}
+\paragraph{Feature types: with one-hot.}
 \begin{itemize}
-\item \textbf{CNN1D (a):} one-hot carries 48.9\% of the absolute relevance, \texttt{fce} 38.9\% (off-diagonal 28.1\%, diagonal 10.8\%) and \texttt{avg} 12.2\%. Per channel, one-hot is the most used (0.031 per channel vs.\ 0.020 for \texttt{avg} and 0.019 for \texttt{fce}).
+\item \textbf{CNN1D (a):} one-hot carries 48.9\% of the absolute relevance, \texttt{fce} 38.9\% (off-diagonal 28.1\%, diagonal 10.8\%) and \texttt{avg} 12.2\%.
 \item \textbf{DFN (a):} the DFN relies more on shape: \texttt{fce} carries 55.2\% (off-diagonal 41.7\%), one-hot 34.7\% and \texttt{avg} 10.1\%.
-\item \textbf{\texttt{avg} parameters:} none dominates (1.3--2.2\% each). RISE has the largest positive signed contribution on high-affinity $k$-mers (+0.121 DFN, +0.053 CNN1D).
-\item \textbf{\texttt{fce} terms:} the largest are TILT--ROLL (5.9\%), SHIFT--SHIFT (3.6\%) and RISE--RISE (3.3\%) for the DFN, and SLIDE--TILT (2.8\%), ROLL--TWIST (2.2\%) and SLIDE--ROLL (2.2\%) for CNN1D.
-\item \textbf{Signed relevance} averages near zero over all rows. On the top-100 $k$-mers it is strongly positive for one-hot (+0.33 DFN, +0.52 CNN1D (a), +1.06 CNN1D (d)) and for \texttt{fce} off-diagonal (+0.46 DFN, +0.24 CNN1D): these features raise the prediction for strong binders.
+\end{itemize}
+\paragraph{Feature types: MD only (set e).}
+\begin{itemize}
+\item \textbf{The \texttt{fce} (stiffness) block dominates:} \texttt{fce} off-diagonal (15 coupling terms per window) carries 64.2\% of the relevance in DFN (e) and 57.1\% in CNN1D (e), \texttt{fce} diagonal 17.7\% and 17.9\%, and the six \texttt{avg} parameters together 18.1\% and 25.0\%. The off-diagonal couplings are 15 of the 27 channels per window, so per channel they are not more used than the others (0.043 vs.\ 0.030 per \texttt{avg} channel for DFN (e)), yet they are the largest block.
+\item \textbf{\texttt{avg} parameters:} none dominates (2.7--3.9\% each for DFN (e), 3.0--5.8\% for CNN1D (e)). TILT is the largest for both (3.9\% and 5.8\%), followed by SHIFT in CNN1D (e) (4.9\%) and by RISE and TWIST in DFN (e) (3.0\% each).
+\item \textbf{Largest \texttt{fce} terms:} TILT--ROLL (10.6\%), TILT--TWIST (5.5\%) and SHIFT--RISE (5.3\%) for DFN (e); SLIDE--TILT (6.1\%), ROLL--TWIST (5.3\%) and TILT--ROLL (5.0\%) for CNN1D (e). For (a) they were TILT--ROLL (5.9\%), SHIFT--SHIFT (3.6\%), RISE--RISE (3.3\%) for DFN and SLIDE--TILT (2.8\%), ROLL--TWIST (2.2\%), SLIDE--ROLL (2.2\%) for CNN1D. TILT--ROLL, SLIDE--TILT and ROLL--TWIST (couplings between tilt, roll, twist and slide) recur among the top terms across the models.
+\item \textbf{Direction:} on the top-100 $k$-mers RISE has the largest positive signed relevance of the \texttt{avg} parameters (+0.216 DFN (e), +0.120 CNN1D (e); +0.121 and +0.053 in (a)), and \texttt{fce} off-diagonal is strongly positive (+0.644 and +0.519). Over all rows the signed relevances are near zero.
+\item \textbf{Comparison with (a):} without the one-hot channels the shape block must carry the whole sequence signal, so the relevance moves onto \texttt{fce} off-diagonal (41.7\% $\to$ 64.2\% for DFN, 28.1\% $\to$ 57.1\% for CNN1D) and \texttt{avg} (10.1\% $\to$ 18.1\%, 12.2\% $\to$ 25.0\%).
 \end{itemize}
 
 \begin{figure}[H]\centering
 \includegraphics[width=.49\textwidth]{lrp/pos_DFN_a.png}\includegraphics[width=.49\textwidth]{lrp/pos_CNN1D_a.png}
-\includegraphics[width=.49\textwidth]{lrp/pos_CNN1D_d.png}
-\caption{Mean $|R|$ of one-hot features per base position and of shape features per tetramer window.}\label{fig:lrppos}\end{figure}
+\includegraphics[width=.49\textwidth]{lrp/pos_CNN1D_d.png}\includegraphics[width=.49\textwidth]{lrp/pos_DFN_e.png}
+\includegraphics[width=.49\textwidth]{lrp/pos_CNN1D_e.png}
+\caption{Mean $|R|$ per base position (for sets (a), (d): one-hot relevance; for set (e): projected relevance, see Methods) and per tetramer window (shape relevance).}\label{fig:lrppos}\end{figure}
+\begin{figure}[H]\centering\includegraphics[width=\textwidth]{lrp/window_compare.png}
+\caption{Left: share of shape relevance per tetramer window. Right: share of per-base relevance per base position (one-hot relevance for (a), (d); projected window relevance for (e)).}\label{fig:lrpwin}\end{figure}
 
-\paragraph{Positions.}
+\paragraph{Positions and windows.}
 \begin{itemize}
-\item \textbf{CNN1D:} relevance peaks at the centre for one-hot (positions 5--6: 0.098/0.097 vs.\ 0.043/0.040 at the ends for set (a); 0.167/0.169 vs.\ 0.057/0.056 for (d)) and for shape (windows 3--5: 0.110--0.117 vs.\ 0.080 at windows 1 and 7). This follows from zero padding: edge positions enter fewer receptive fields.
-\item \textbf{DFN:} the profile is U-shaped. One-hot relevance is highest at the end bases (0.21--0.22 vs.\ 0.10--0.11 at positions 4--5), and shape relevance is highest in windows 1 and 7 (0.44 vs.\ 0.35--0.39). The end bases are covered by only one tetramer window, so their identity is least determined by the shape block and the DFN reads it from one-hot.
+\item \textbf{CNN1D:} relevance peaks at the centre for one-hot (positions 5--6: 0.098/0.097 vs.\ 0.043/0.040 at the ends for set (a); 0.167/0.169 vs.\ 0.057/0.056 for (d)) and for shape (windows 3--5: 0.110--0.117 vs.\ 0.080 at windows 1 and 7). The shape window profile of CNN1D (e) is flat and slightly centre-peaked (window shares 12.3\% at window 1, 15.6\% at window 3, 12.6\% at window 7). This follows from zero padding: edge positions enter fewer receptive fields.
+\item \textbf{DFN:} the profile is U-shaped. In set (a), one-hot relevance is highest at the end bases (0.21--0.22 vs.\ 0.10--0.11 at positions 4--5), and shape relevance is highest in windows 1 and 7 (0.44 vs.\ 0.35--0.39). Without one-hot, DFN (e) depends even more on the end windows: they carry 22.1\% and 21.6\% of the shape relevance, vs.\ 10.2--13.2\% for the central windows 2--6 (window 6 = 13.2\%). The end bases are covered by only one tetramer window, so their identity is only available there, and without one-hot the DFN reads them from the end-window shape.
+\item \textbf{Projection for (e).} The per-base curves for (e) (right panel of Figure~\ref{fig:lrpwin}) are obtained from window relevance by the equal split described in Methods. Base positions 1 and 10 receive only a quarter of one window's relevance by construction, and the central positions several windows, so these curves show the window relevance spread over bases and are not an independent base-level measurement.
 \end{itemize}
 
 \begin{figure}[H]\centering
-\includegraphics[width=.9\textwidth]{lrp/heat_CNN1D_a.png}
-\includegraphics[width=.9\textwidth]{lrp/heat_CNN1D_d.png}
-\includegraphics[width=.9\textwidth]{lrp/heat_DFN_a.png}
-\caption{Mean signed LRP relevance per nucleotide channel and base position: top-50 test $k$-mers by affinity (left) and all test rows (right).}\label{fig:lrpheat}\end{figure}
+\includegraphics[width=.8\textwidth]{lrp/heat_CNN1D_a.png}
+\includegraphics[width=.8\textwidth]{lrp/heat_CNN1D_d.png}
+\includegraphics[width=.8\textwidth]{lrp/heat_DFN_a.png}
+\includegraphics[width=.8\textwidth]{lrp/heat_CNN1D_e.png}
+\includegraphics[width=.8\textwidth]{lrp/heat_DFN_e.png}
+\caption{Mean signed LRP relevance per nucleotide channel and base position: top-50 test $k$-mers by affinity (left) and all test rows (right). For (e), the base-level map is projected from window relevance onto the channel of the base present in each window.}\label{fig:lrpheat}\end{figure}
 
 \begin{figure}[H]\centering
-\includegraphics[width=.9\textwidth]{lrp/logo_CNN1D_d.png}
-\includegraphics[width=.9\textwidth]{lrp/logo_CNN1D_a.png}
-\includegraphics[width=.9\textwidth]{lrp/logo_DFN_a.png}
-\caption{Relevance logos for the six highest-affinity test $k$-mers (letter height = signed relevance of the position).}\label{fig:lrplogo}\end{figure}
+\includegraphics[width=.8\textwidth]{lrp/logo_CNN1D_d.png}
+\includegraphics[width=.8\textwidth]{lrp/logo_CNN1D_a.png}
+\includegraphics[width=.8\textwidth]{lrp/logo_DFN_a.png}
+\includegraphics[width=.8\textwidth]{lrp/logo_CNN1D_e.png}
+\includegraphics[width=.8\textwidth]{lrp/logo_DFN_e.png}
+\caption{Relevance logos for the six highest-affinity test $k$-mers (letter height = signed relevance of the position; for (e), projected from window relevance).}\label{fig:lrplogo}\end{figure}
 
 \paragraph{Motif check.} The highest-affinity $k$-mers do not contain a GATA site; they are ETS-like (ACTTCCGG / CCGGAAGT). Across all of \texttt{4.txt}:
 \begin{itemize}
@@ -66,4 +99,4 @@ one-hot & 0.347 & -0.002 & +0.331 & 0.489 & +0.072 & +0.525 & 1.000 & +0.146 & +
 \item $k$-mers containing GATA/TATC (5.3\%) are not enriched ($-1.48$ vs.\ $-1.50$);
 \item the canonical WGATAR core AGATAA/TTATCT occurs in only 182 $k$-mers, all with count $\leq$9, so none reaches the count$\geq$10 training set.
 \end{itemize}
-In the test set, 2 of the top-100 $k$-mers contain GATA/TATC and 63 contain the ETS core GGAA/TTCC. In the logos, positive relevance falls on the flanking ACTT and GG of ACTTCCGG and on the GGAA run of CCGGAAGT, while the central CC gets little relevance. Measured as the share of a $k$-mer's one-hot $|R|$ that falls on its GGAA/TTCC core, the values for the top-100 $k$-mers are 0.342 (DFN), 0.426 (CNN1D (a)) and 0.447 (CNN1D (d)). The positional expectation for the same positions is 0.349, 0.427 and 0.433. Relevance therefore follows the motif in individual strong binders, but it is not concentrated on the 4-bp core beyond what the positional profile predicts.
+In the test set, 2 of the top-100 $k$-mers contain GATA/TATC and 63 contain the ETS core GGAA/TTCC. In the logos, positive relevance falls on the flanking ACTT and GG of ACTTCCGG and on the GGAA run of CCGGAAGT, while the central CC gets little relevance. Measured as the share of a $k$-mer's one-hot $|R|$ that falls on its GGAA/TTCC core, the values for the top-100 $k$-mers are 0.342 (DFN (a)), 0.426 (CNN1D (a)), 0.447 (CNN1D (d)), 0.495 (DFN (e)) and 0.542 (CNN1D (e)). The positional expectation for the same positions is 0.349, 0.427, 0.433, 0.417 and 0.465. With one-hot input, relevance therefore follows the motif in individual strong binders but is not concentrated on the 4-bp core beyond what the positional profile predicts. In the shape-only maps (e), which are projected from window relevance (Section~\ref{sec:lrpm}), the core share exceeds the positional expectation by 0.08 for both models (DFN 0.495 vs.\ 0.417, CNN1D 0.542 vs.\ 0.465): the MD windows that cover GGAA/TTCC are the ones the models use for strong binders.

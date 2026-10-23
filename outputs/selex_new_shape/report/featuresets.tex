@@ -1,13 +1,16 @@
-\subsection{Shape feature sets benchmarked}\label{sec:fs}
-Four feature sets were compared. Sets (a)--(c) are \emph{shape + one-hot}: the shape windows from \texttt{data/selex} (\texttt{avg}+\texttt{fce}) concatenated with the one-hot encoding. Set (d) is \emph{one-hot only}, with no shape features (\texttt{shape=0}). It was run with the full final protocol (output \texttt{final\_onehot}), not taken from the ablation. Everything else was identical: labels from \texttt{4.txt} (the shape files have none), log affinity, count $\geq$10, per-strand rows, per-fold standardisation, and the same test split and grouped folds. Per window, \texttt{avg} has 6 values and \texttt{fce} 21.
-\begin{table}[H]\centering\small
+\subsection{Feature sets benchmarked}\label{sec:fs}
+Seven feature sets were compared. \emph{Sets (a)--(c) are shape + one-hot}: the MD-derived shape windows from \texttt{data/selex} (\texttt{avg}+\texttt{fce}) concatenated with the one-hot encoding. Set (d) is \emph{one-hot only}, with no shape. \emph{Sets (e)--(g) are MD shape only} (\texttt{onehot=0}, \texttt{shape=1}): the same shape windows as (a)--(c) but without any one-hot channel, so the model sees the sequence only through the MD tables. Sets (d)--(g) were run with the full final protocol (outputs \texttt{final\_onehot}, \texttt{final\_e}, \texttt{final\_f}, \texttt{final\_g}), not taken from the ablation. Everything else was identical across sets: labels from \texttt{4.txt} (the shape files have none), log affinity, count $\geq$10, per-strand rows, per-fold standardisation, and the same test split and grouped folds. Per window, \texttt{avg} has 6 values and \texttt{fce} 21.
+\begin{table}[H]\centering\footnotesize
 \caption{Input dimensions per feature set. Flat models: Linear, Ridge, SVR, RF, DFN. Per-position models: CNN1D, CNNAttention, Transformer. One-hot is 40 values (flat) or 16 per position. $^\dagger$Hexamer channels are zero at positions 0 and 6.}
 \begin{tabular}{lll}\toprule
 Feature set & Flat vector & Per-position tensor\\\midrule
-(a) tetramer & $7\times27+40=229$ & $7\times(27+16)=7\times43$\\
-(b) hexamer & $5\times27+40=175$ & $7\times(27+16)=7\times43$$^\dagger$\\
-(c) tetramer+hexamer & $7\times27+5\times27+40=364$ & $7\times(27+27+16)=7\times70$\\
-(d) one-hot only & $40$ ($10\times4$) & $7\times16$ (bases of each tetramer window)\\\bottomrule
+(a) tetramer shape + one-hot & $7\times27+40=229$ & $7\times(27+16)=7\times43$\\
+(b) hexamer shape + one-hot & $5\times27+40=175$ & $7\times(27+16)=7\times43$$^\dagger$\\
+(c) tetra+hexa shape + one-hot & $7\times27+5\times27+40=364$ & $7\times(27+27+16)=7\times70$\\
+(d) one-hot only & $40$ ($10\times4$) & $7\times16$ (bases of each tetramer window)\\
+(e) tetramer shape only & $7\times27=189$ & $7\times27$\\
+(f) hexamer shape only & $5\times27=135$ & $7\times27$$^\dagger$\\
+(g) tetra+hexa shape only & $7\times27+5\times27=324$ & $7\times(27+27)=7\times54$\\\bottomrule
 \end{tabular}\label{tab:dims}\end{table}
 In the per-position layout, hexamer $s[j{:}j{+}6]$ ($j=0..4$) is placed at tetramer position $j{+}1$, its central tetramer. The two end positions get zero hexamer channels, which become constant values after standardisation (\texttt{lib.windowed}). Flat models concatenate the 5 hexamer windows without padding (\texttt{lib.flat\_feats}). Set (a) is the chosen preprocessing; its runs are the final runs of Section~\ref{sec:models}.
 
@@ -19,4 +22,12 @@ All timings were measured on the box: 8-core Intel Xeon CPU (1 thread per core),
 \item \emph{Training time} per run is the wall time of \texttt{fit} (including early stopping) plus one prediction pass over all rows.
 \item \emph{Inference} is a separate \texttt{predict} on the 1{,}335 test rows, scaled to 1{,}000 sequences.
 \item The original tetramer runs did not log timing. They were re-timed by rerunning the same code with seed 0 for every fold (5 runs per model) under the same parallel setup. Their reported total is the per-run mean times the number of runs.
+\end{itemize}
+
+
+\subsection{Is the MD signal physical or an identity code? Two controls}\label{sec:controls}
+The MD tables are lookups: every tetramer has its own 27 numbers, so shape-only input can in principle just label the tetramer, like a one-hot code. We therefore ran two controls.
+\begin{itemize}
+\item \textbf{Identity check} (\texttt{identity\_check.py}). For the 256 tetramers (z-scored 27-dimensional vectors) we report the rank, the smallest pairwise distance, and the cross-validated accuracy (grouped by reverse complement) of a logistic regression that predicts the base at each tetramer position from the 27 values. We also test whether all tetramers are still recovered by nearest neighbour after adding Gaussian noise (sd 0.1 in z-units).
+\item \textbf{Permuted-table control.} The 256 real MD rows (\texttt{avg} and \texttt{fce} together) are randomly reassigned to the tetramers (\texttt{PERM\_TAB}; seeds 1 and 2). The input then has identical dimension, value distribution and identifying power, but the MD values no longer correspond to the physical properties of the tetramer. If real MD values only act as an identity code, the permuted table should perform the same. The control is run for set (e) with RF (5 runs), DFN and CNN1D (15 runs each), with the same protocol, folds and seeds. It was not run for the other models or sets.
 \end{itemize}
